@@ -4286,3 +4286,19 @@ if(APPLE AND MACOS_BUNDLE)
     configure_file(cmake/modules/BundleInstall.cmake.in "${CMAKE_CURRENT_BINARY_DIR}/BundleInstall.cmake" @ONLY)
     install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/BundleInstall.cmake")
 endif()
+
+# ONNX Runtime is not packaged by Debian/Ubuntu (and Mixxx ships it as a
+# prebuilt download on other platforms too), so the Linux package has to carry
+# it. Install it into a private directory and give the binary an $ORIGIN rpath,
+# which also lets dpkg-shlibdeps resolve it as an in-package library instead of
+# failing with "cannot find library libonnxruntime.so.1".
+if(UNIX AND NOT APPLE AND NOT ANDROID AND ONNXRUNTIME_LIBRARY)
+  install(FILES "${ONNXRUNTIME_LIBRARY}"
+    DESTINATION "lib/mixxx"
+    RENAME "libonnxruntime.so.1")
+  set_target_properties(mixxx PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../lib/mixxx")
+  # The shlibdeps scanner needs the library to be findable while packaging.
+  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS "${ONNXRUNTIME_LIBRARY}")
+  message(STATUS "Bundling ONNX Runtime into lib/mixxx: ${ONNXRUNTIME_LIBRARY}")
+endif()
