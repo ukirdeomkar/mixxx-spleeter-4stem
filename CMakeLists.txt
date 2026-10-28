@@ -2692,7 +2692,22 @@ find_package(FLAC REQUIRED)
 target_link_libraries(mixxx-lib PRIVATE FLAC::FLAC)
 
 # Spleeter stem engine: single precision FFT for the STFT frontend and iSTFT.
-find_package(FFTW3f REQUIRED)
+# vcpkg ships FFTW3fConfig.cmake; Debian/Ubuntu only ship the double-precision
+# FFTW config, so fall back to locating libfftw3f directly.
+find_package(FFTW3f QUIET)
+if(NOT TARGET FFTW3::fftw3f)
+  find_path(FFTW3F_INCLUDE_DIR NAMES fftw3.h)
+  find_library(FFTW3F_LIBRARY NAMES fftw3f libfftw3f)
+  if(NOT FFTW3F_INCLUDE_DIR OR NOT FFTW3F_LIBRARY)
+    message(FATAL_ERROR "FFTW single precision (libfftw3f) not found. "
+      "Install libfftw3-dev (Debian/Ubuntu) or the fftw3 port (vcpkg).")
+  endif()
+  message(STATUS "Found FFTW3f: ${FFTW3F_LIBRARY}")
+  add_library(FFTW3::fftw3f UNKNOWN IMPORTED)
+  set_target_properties(FFTW3::fftw3f PROPERTIES
+    IMPORTED_LOCATION "${FFTW3F_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${FFTW3F_INCLUDE_DIR}")
+endif()
 target_link_libraries(mixxx-lib PRIVATE FFTW3::fftw3f)
 
 # The four Spleeter models are not stored in git (~152 MB). When a release
@@ -4170,6 +4185,9 @@ set(CPACK_DEBIAN_PACKAGE_REPLACES "mixxx-data")
 
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "")
 list(APPEND CPACK_DEBIAN_PACKAGE_DEPENDS "fonts-open-sans")
+if(TARGET FFTW3::fftw3f)
+  list(APPEND CPACK_DEBIAN_PACKAGE_DEPENDS "libfftw3-single3")
+endif()
 list(APPEND CPACK_DEBIAN_PACKAGE_DEPENDS "fonts-ubuntu")
 if(QT6)
   list(APPEND CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6sql6-sqlite")
