@@ -76,3 +76,8 @@ res/qrc_mixxx.cc
 # AI stem separation models
 models/*.onnx
 !models/README.md
+
+# local dev
+build/
+buildenv/
+build_*.log
