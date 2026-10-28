@@ -1060,3 +1060,79 @@ WRateRange {
   font-size: 10px;
   qproperty-alignment: 'AlignCenter';
 }
+
+/************** 4-stem separation controls ************************************/
+
+#StemStrip WPushButton {
+  font-size: 11px;
+  font-weight: bold;
+  padding: 0px;
+  border-radius: 2px;
+  color: #aab2b7;
+  background-color: #1a2025;
+  border: 1px solid #2c343a;
+}
+
+#StemStrip WPushButton:hover {
+  color: #eeeeee;
+  border: 1px solid #656d75;
+}
+
+/* Muted stem */
+#StemStrip WPushButton#StemVocalsButton[value="0"],
+#StemStrip WPushButton#StemInstButton[value="0"],
+#StemStrip WPushButton#StemBassButton[value="0"],
+#StemStrip WPushButton#StemDrumsButton[value="0"] {
+  color: #4c5359;
+  background-color: #0f0f0f;
+  border: 1px solid #1a2025;
+}
+
+/* Audible stem */
+#StemStrip WPushButton#StemVocalsButton[value="1"] {
+  color: #ffffff;
+  background-color: #a3003f;
+  border: 1px solid #f90562;
+}
+#StemStrip WPushButton#StemInstButton[value="1"] {
+  color: #ffffff;
+  background-color: #2e6b4f;
+  border: 1px solid #3f8a66;
+}
+#StemStrip WPushButton#StemBassButton[value="1"] {
+  color: #ffffff;
+  background-color: #8a5c00;
+  border: 1px solid #b37700;
+}
+#StemStrip WPushButton#StemDrumsButton[value="1"] {
+  color: #ffffff;
+  background-color: #8a3a00;
+  border: 1px solid #ff6600;
+}
+
+/* Momentary solo (hold) + reset + engine mode */
+#StemStrip WPushButton#StemSoloVocButton,
+#StemStrip WPushButton#StemSoloInstButton,
+#StemStrip WPushButton#StemSoloBassButton,
+#StemStrip WPushButton#StemSoloDrmButton,
+#StemStrip WPushButton#StemResetButton,
+#StemStrip WPushButton#StemModeButton {
+  color: #99a0a4;
+  background-color: #141a1e;
+}
+
+#StemStrip WPushButton#StemSoloVocButton:pressed,
+#StemStrip WPushButton#StemSoloInstButton:pressed,
+#StemStrip WPushButton#StemSoloBassButton:pressed,
+#StemStrip WPushButton#StemSoloDrmButton:pressed,
+#StemStrip WPushButton#StemResetButton:pressed {
+  color: #ffffff;
+  background-color: #f90562;
+  border: 1px solid #f90562;
+}
+
+#StemStrip WPushButton#StemModeButton[value="1"] {
+  color: #ffffff;
+  background-color: #626f87;
+  border: 1px solid #8a9ab5;
+}

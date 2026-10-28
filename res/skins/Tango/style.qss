@@ -3228,3 +3228,79 @@ WEffectChainPresetSelector::indicator::unchecked:selected,
 WRateRange {
     font-size: 11px;
 }
+
+/************** 4-stem separation controls ************************************/
+
+#StemStrip WPushButton {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 0px;
+  border-radius: 2px;
+  color: #d2d2d2;
+  background-color: #4b4b4b;
+  border: 1px solid #585858;
+}
+
+#StemStrip WPushButton:hover {
+  background-color: #585858;
+  border: 1px solid #ff8f00;
+}
+
+/* Muted stem: keep the label visible but drain the colour. */
+#StemStrip WPushButton#StemVocalsButton[value="0"],
+#StemStrip WPushButton#StemInstButton[value="0"],
+#StemStrip WPushButton#StemBassButton[value="0"],
+#StemStrip WPushButton#StemDrumsButton[value="0"] {
+  color: #6d6d6d;
+  background-color: #1e1e1e;
+  border: 1px solid #333333;
+}
+
+/* Audible stem: one accent colour per stem, matching the pad order. */
+#StemStrip WPushButton#StemVocalsButton[value="1"] {
+  color: #ffffff;
+  background-color: #8a1538;
+  border: 1px solid #b31b4a;
+}
+#StemStrip WPushButton#StemInstButton[value="1"] {
+  color: #ffffff;
+  background-color: #1f6b3a;
+  border: 1px solid #2b8a4d;
+}
+#StemStrip WPushButton#StemBassButton[value="1"] {
+  color: #ffffff;
+  background-color: #8a5a00;
+  border: 1px solid #b07600;
+}
+#StemStrip WPushButton#StemDrumsButton[value="1"] {
+  color: #ffffff;
+  background-color: #8a3a00;
+  border: 1px solid #b34a00;
+}
+
+/* Momentary solo (hold) + reset + engine mode */
+#StemStrip WPushButton#StemSoloVocButton,
+#StemStrip WPushButton#StemSoloInstButton,
+#StemStrip WPushButton#StemSoloBassButton,
+#StemStrip WPushButton#StemSoloDrmButton,
+#StemStrip WPushButton#StemResetButton,
+#StemStrip WPushButton#StemModeButton {
+  color: #aaaaaa;
+  background-color: #333333;
+}
+
+#StemStrip WPushButton#StemSoloVocButton:pressed,
+#StemStrip WPushButton#StemSoloInstButton:pressed,
+#StemStrip WPushButton#StemSoloBassButton:pressed,
+#StemStrip WPushButton#StemSoloDrmButton:pressed,
+#StemStrip WPushButton#StemResetButton:pressed {
+  color: #111111;
+  background-color: #ff8f00;
+  border: 1px solid #ff8f00;
+}
+
+#StemStrip WPushButton#StemModeButton[value="1"] {
+  color: #ffffff;
+  background-color: #6a0a5a;
+  border: 1px solid #90107a;
+}

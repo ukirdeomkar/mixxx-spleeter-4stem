@@ -219,6 +219,9 @@ Variables:
             </Connection>
           </WidgetGroup><!-- /Stacked Overviews, ArtistTitle, Comment -->
 
+          <!-- 4-stem separation controls -->
+          <Template src="skins:Tango/decks/stems_strip.xml"/>
+
           <WidgetGroup><ObjectName>Spacer0f</ObjectName><Size>1min,1f</Size></WidgetGroup>
 
           <Template src="skins:Tango/decks/row_transport_right.xml" />

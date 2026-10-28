@@ -20,6 +20,9 @@
         <Children>
           <Template src="skin:deck_text_row.xml"/>
 
+          <!-- 4-stem separation controls, above the deck waveform -->
+          <Template src="skin:stems_strip.xml"/>
+
           <!-- Hides if the 'Parallel Waveforms' option is activated in the skin settings -->
           <WidgetGroup>
             <Layout>horizontal</Layout>

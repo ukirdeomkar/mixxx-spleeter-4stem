@@ -184,6 +184,12 @@ masks sum to one, so `sum(stems) - mix` must be very negative (~−135 dB measur
 The "instruments" stem keeps the upstream `stem_inst_*` names so existing skins
 and mappings keep working.
 
+Every bundled skin — LateNight, Deere, Tango and Shade, including the
+"(64 Samplers)" variants — carries the stem strip above the deck transport:
+`VOC | S  INST | S  BASS | S  DRUM | S  ALL  AI`. Click a stem to mute/unmute
+it, hold `S` (or right-click the stem button) to solo, `ALL` unmutes everything
+and the last button switches between `DSP` (instant) and `AI` (Spleeter).
+
 ## Known limitations
 
 - Only one separated deck is comfortable on 8 GB of RAM (~420 MB per deck plus

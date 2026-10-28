@@ -614,6 +614,9 @@
             </Children>
           </WidgetGroup>
 
+          <!-- 4-stem separation controls -->
+          <Template src="skin:stems_strip.xml"/>
+
           <!-- effects <- -> mic/aux | sampler | jump | loop | cues -->
           <WidgetGroup>
             <Size>0e,59f</Size>

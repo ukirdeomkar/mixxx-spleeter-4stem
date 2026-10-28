@@ -170,10 +170,25 @@ first seconds of a freshly loaded track are DSP stems that morph into AI stems.
   `stem_inst_*` control names so existing mappings and the skin keep working.
 - `StemDspIsolator`: 4-way split (bass = <220 Hz band, drums = transients,
   vocals = centre/high extraction, other = residual) which still sums to unity.
-- LateNight skin: the stem buttons no longer live in the cramped transport row
-  (only two of the four fit there). They are a dedicated strip above the track
-  title, one section per stem (`res/skins/LateNight/decks/stems_strip.xml`):
-  `VOC | S  DRUM | S  BASS | S  INST | S  ALL  AI`.
+- Stem buttons no longer live in the cramped transport row (only two of the
+  four fit there). Each bundled skin has a dedicated strip with one section per
+  stem, above the deck transport area:
+
+  `VOC | S   INST | S   BASS | S   DRUM | S   ALL   AI`
+
+  - `res/skins/LateNight/decks/stems_strip.xml` — 24 px, per-stem colours and
+    pressed states in `LateNight/style.qss`
+  - `res/skins/Deere/stems_strip.xml` — 20 px, plain buttons that inherit
+    Deere's existing `WPushButton` palette
+  - `res/skins/Tango/decks/stems_strip.xml` — 18 px, compact variant; colours
+    in `Tango/style.qss`
+  - `res/skins/Shade/stems_strip.xml` — 20 px, sits between the fixed 165 px
+    deck top and the transport pane; colours in `Shade/style.qss`
+
+  The "(64 Samplers)" variants reference the base skins' templates, so they get
+  the same strip without extra files. The `S` buttons are momentary (hold to
+  solo), matching the `ControlPushButton::PUSH` solo controls; right-clicking a
+  stem's main button also solos it.
 
 ## Cache
 
