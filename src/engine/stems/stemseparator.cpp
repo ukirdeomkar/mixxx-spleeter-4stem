@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -173,8 +174,15 @@ bool SpleeterEngine::initialize(const QString& customModelDir) {
 
         for (int i = 0; i < kStemCount; ++i) {
             qDebug() << "SpleeterEngine: loading" << kStemLabels[i] << "from" << paths[i];
+#ifdef _WIN32
+            // Ort::Session takes a wchar_t path on Windows, UTF-8 elsewhere.
+            const std::wstring widePath = paths[i].toStdWString();
+            m_pSessions[i] = std::make_unique<Ort::Session>(
+                    *m_pEnv, widePath.c_str(), sessionOptions);
+#else
             m_pSessions[i] = std::make_unique<Ort::Session>(
                     *m_pEnv, paths[i].toUtf8().constData(), sessionOptions);
+#endif
         }
 
         m_pMemoryInfo = std::make_unique<Ort::MemoryInfo>(

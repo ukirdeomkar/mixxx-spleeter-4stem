@@ -12,9 +12,10 @@
 #include "engine/stems/spleeterstft.h"
 
 namespace Ort {
-class Env;
-class Session;
-class MemoryInfo;
+// ONNX Runtime declares these as structs; matching the tag avoids MSVC C4099.
+struct Env;
+struct Session;
+struct MemoryInfo;
 } // namespace Ort
 
 namespace mixxx {
