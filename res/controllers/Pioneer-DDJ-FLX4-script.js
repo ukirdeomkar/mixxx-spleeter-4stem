@@ -41,6 +41,13 @@
 //        * Pad FX2
 //        * Keyshift mode
 //
+//  Stems (this fork):
+//      * SAMPLER pad mode is repurposed for stem control
+//        * PAD 1 = vocals, PAD 2 = instruments, PAD 3 = bass, PAD 4 = drums
+//        * SHIFT + PAD 1-4 = solo that stem
+//        * PAD 5-8 = unbound, reserved
+//        * pad LEDs follow the stem enabled state
+//
 //  Not implemented yet (but might be in the future):
 //      * Smart CFX
 //      * Smart fader
@@ -244,13 +251,8 @@ PioneerDDJFLX4.init = function() {
     engine.softTakeover("[EffectRack1_EffectUnit1_Effect3]", "meta", true);
     engine.softTakeover("[EffectRack1_EffectUnit1]", "mix", true);
 
-    const samplerCount = 16;
-    if (engine.getValue("[App]", "num_samplers") < samplerCount) {
-        engine.setValue("[App]", "num_samplers", samplerCount);
-    }
-    for (let i = 1; i <= samplerCount; ++i) {
-        engine.makeConnection("[Sampler" + i + "]", "play", PioneerDDJFLX4.samplerPlayOutputCallbackFunction);
-    }
+    // NOTE: the SAMPLER pad mode is repurposed for stem control (see
+    // stemPadPressed below), so sampler LED feedback is not wired up here.
 
     engine.makeConnection("[Channel1]", "track_loaded", PioneerDDJFLX4.trackLoadedLED);
     engine.makeConnection("[Channel2]", "track_loaded", PioneerDDJFLX4.trackLoadedLED);
@@ -718,6 +720,35 @@ PioneerDDJFLX4.padModeKeyPressed = function(_channel, _control, value, _status, 
         PioneerDDJFLX4.toggleLight(deck.samplerMode, true);
     } else if (_control === 0x6F) {
         PioneerDDJFLX4.toggleLight(deck.keyShiftMode, true);
+    }
+};
+
+// Stem control on the SAMPLER pads: 1 = vocals, 2 = instruments, 3 = bass,
+// 4 = drums. Pads 5-8 are deliberately unbound. SHIFT+pad solos a stem.
+PioneerDDJFLX4.stemPads = {
+    0x30: {enabled: "stem_vocals_enabled", solo: "stem_vocals_solo"},
+    0x31: {enabled: "stem_inst_enabled", solo: "stem_inst_solo"},
+    0x32: {enabled: "stem_bass_enabled", solo: "stem_bass_solo"},
+    0x33: {enabled: "stem_drums_enabled", solo: "stem_drums_solo"}
+};
+
+PioneerDDJFLX4.stemPadPressed = function(_channel, control, value, _status, group) {
+    if (!value) {
+        return;
+    }
+    const stem = PioneerDDJFLX4.stemPads[control];
+    if (stem) {
+        script.toggleControl(group, stem.enabled);
+    }
+};
+
+PioneerDDJFLX4.stemSoloPadPressed = function(_channel, control, value, _status, group) {
+    if (!value) {
+        return;
+    }
+    const stem = PioneerDDJFLX4.stemPads[control];
+    if (stem) {
+        engine.setValue(group, stem.solo, 1);
     }
 };
 
