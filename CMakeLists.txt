@@ -4252,6 +4252,29 @@ if(WIN32)
     configure_file(packaging/wix/LICENSE.rtf.in packaging/wix/LICENSE.rtf @ONLY)
 endif()
 
+# ONNX Runtime is not packaged by Debian/Ubuntu (Mixxx ships it as a prebuilt
+# download on every platform), so the Linux package has to carry it. Install it
+# into a private directory and give the binary an $ORIGIN rpath. The CPack
+# variables must be set before include(CPack) or they never reach
+# CPackConfig.cmake.
+if(UNIX AND NOT APPLE AND NOT ANDROID AND ONNXRUNTIME_LIBRARY)
+  # ONNXRUNTIME_LIBRARY is usually a symlink (libonnxruntime.so ->
+  # libonnxruntime.so.1); installing the link under the target name would
+  # produce a self-referential, broken symlink in the package.
+  get_filename_component(_ort_lib_real "${ONNXRUNTIME_LIBRARY}" REALPATH)
+  get_filename_component(_ort_lib_dir "${_ort_lib_real}" DIRECTORY)
+
+  install(FILES "${_ort_lib_real}"
+    DESTINATION "lib/mixxx"
+    RENAME "libonnxruntime.so.1")
+  set_target_properties(mixxx PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../lib/mixxx")
+
+  # dpkg-shlibdeps -l takes a DIRECTORY of private libraries, not a file.
+  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS "${_ort_lib_dir}")
+  message(STATUS "Bundling ONNX Runtime into lib/mixxx: ${_ort_lib_real}")
+endif()
+
 include(CPack)
 
 if (APPLOCAL_COMPONENT_DEFINED)
@@ -4287,19 +4310,3 @@ if(APPLE AND MACOS_BUNDLE)
     install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/BundleInstall.cmake")
 endif()
 
-# ONNX Runtime is not packaged by Debian/Ubuntu (and Mixxx ships it as a
-# prebuilt download on other platforms too), so the Linux package has to carry
-# it. Install it into a private directory and give the binary an $ORIGIN rpath,
-# which also lets dpkg-shlibdeps resolve it as an in-package library instead of
-# failing with "cannot find library libonnxruntime.so.1".
-if(UNIX AND NOT APPLE AND NOT ANDROID AND ONNXRUNTIME_LIBRARY)
-  get_filename_component(_ort_lib_dir "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
-  install(FILES "${ONNXRUNTIME_LIBRARY}"
-    DESTINATION "lib/mixxx"
-    RENAME "libonnxruntime.so.1")
-  set_target_properties(mixxx PROPERTIES
-    INSTALL_RPATH "$ORIGIN/../lib/mixxx")
-  # dpkg-shlibdeps -l takes a DIRECTORY of private libraries, not a file.
-  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS "${_ort_lib_dir}")
-  message(STATUS "Bundling ONNX Runtime into lib/mixxx: ${ONNXRUNTIME_LIBRARY}")
-endif()
