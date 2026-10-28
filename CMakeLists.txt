@@ -884,6 +884,7 @@ add_library(mixxx-lib STATIC EXCLUDE_FROM_ALL
   src/engine/channels/enginechannel.cpp
   src/engine/channels/enginedeck.cpp
   src/engine/channels/enginemicrophone.cpp
+  src/engine/stems/spleeterstft.cpp
   src/engine/stems/stemcache.cpp
   src/engine/stems/stemchannelprocessor.cpp
   src/engine/stems/stemdspisolator.cpp
@@ -2689,6 +2690,10 @@ endif()
 # FLAC
 find_package(FLAC REQUIRED)
 target_link_libraries(mixxx-lib PRIVATE FLAC::FLAC)
+
+# Spleeter stem engine: single precision FFT for the STFT frontend and iSTFT.
+find_package(FFTW3f REQUIRED)
+target_link_libraries(mixxx-lib PRIVATE FFTW3::fftw3f)
 
 # FpClassify This is a wrapper around the fpclassify function that prevents
 # inlining It is compiled without optimization and allows to use these function

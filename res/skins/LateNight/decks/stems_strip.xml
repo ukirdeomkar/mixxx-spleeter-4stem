@@ -1,0 +1,218 @@
+<Template>
+  <WidgetGroup>
+    <ObjectName>StemStrip</ObjectName>
+    <Layout>horizontal</Layout>
+    <SizePolicy>me,min</SizePolicy>
+    <MinimumSize>300,24</MinimumSize>
+    <Children>
+
+      <!-- ================= VOCALS ================= -->
+      <PushButton>
+        <Tooltip>Vocals: click to mute/unmute, right-click to solo</Tooltip>
+        <ObjectName>StemVocalsButton</ObjectName>
+        <Size>50f,24f</Size>
+        <NumberStates>2</NumberStates>
+        <RightClickIsPushButton>true</RightClickIsPushButton>
+        <State>
+          <Number>0</Number>
+          <Text>VOC</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <State>
+          <Number>1</Number>
+          <Text>VOC</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_vocals_enabled</ConfigKey>
+          <ButtonState>LeftButton</ButtonState>
+        </Connection>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_vocals_solo</ConfigKey>
+          <ButtonState>RightButton</ButtonState>
+        </Connection>
+      </PushButton>
+      <PushButton>
+        <Tooltip>Solo vocals</Tooltip>
+        <ObjectName>StemSoloVocButton</ObjectName>
+        <Size>22f,24f</Size>
+        <NumberStates>1</NumberStates>
+        <State>
+          <Number>0</Number>
+          <Text>S</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_vocals_solo</ConfigKey>
+        </Connection>
+      </PushButton>
+
+      <WidgetGroup><Size>4f,0min</Size></WidgetGroup>
+
+      <!-- ================= DRUMS ================= -->
+      <PushButton>
+        <Tooltip>Drums: click to mute/unmute, right-click to solo</Tooltip>
+        <ObjectName>StemDrumsButton</ObjectName>
+        <Size>50f,24f</Size>
+        <NumberStates>2</NumberStates>
+        <RightClickIsPushButton>true</RightClickIsPushButton>
+        <State>
+          <Number>0</Number>
+          <Text>DRUM</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <State>
+          <Number>1</Number>
+          <Text>DRUM</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_drums_enabled</ConfigKey>
+          <ButtonState>LeftButton</ButtonState>
+        </Connection>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_drums_solo</ConfigKey>
+          <ButtonState>RightButton</ButtonState>
+        </Connection>
+      </PushButton>
+      <PushButton>
+        <Tooltip>Solo drums</Tooltip>
+        <ObjectName>StemSoloDrmButton</ObjectName>
+        <Size>22f,24f</Size>
+        <NumberStates>1</NumberStates>
+        <State>
+          <Number>0</Number>
+          <Text>S</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_drums_solo</ConfigKey>
+        </Connection>
+      </PushButton>
+
+      <WidgetGroup><Size>4f,0min</Size></WidgetGroup>
+
+      <!-- ================= BASS ================= -->
+      <PushButton>
+        <Tooltip>Bass: click to mute/unmute, right-click to solo</Tooltip>
+        <ObjectName>StemBassButton</ObjectName>
+        <Size>50f,24f</Size>
+        <NumberStates>2</NumberStates>
+        <RightClickIsPushButton>true</RightClickIsPushButton>
+        <State>
+          <Number>0</Number>
+          <Text>BASS</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <State>
+          <Number>1</Number>
+          <Text>BASS</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_bass_enabled</ConfigKey>
+          <ButtonState>LeftButton</ButtonState>
+        </Connection>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_bass_solo</ConfigKey>
+          <ButtonState>RightButton</ButtonState>
+        </Connection>
+      </PushButton>
+      <PushButton>
+        <Tooltip>Solo bass</Tooltip>
+        <ObjectName>StemSoloBassButton</ObjectName>
+        <Size>22f,24f</Size>
+        <NumberStates>1</NumberStates>
+        <State>
+          <Number>0</Number>
+          <Text>S</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_bass_solo</ConfigKey>
+        </Connection>
+      </PushButton>
+
+      <WidgetGroup><Size>4f,0min</Size></WidgetGroup>
+
+      <!-- ================= INSTRUMENTS / OTHER ================= -->
+      <PushButton>
+        <Tooltip>Instruments: click to mute/unmute, right-click to solo</Tooltip>
+        <ObjectName>StemInstButton</ObjectName>
+        <Size>50f,24f</Size>
+        <NumberStates>2</NumberStates>
+        <RightClickIsPushButton>true</RightClickIsPushButton>
+        <State>
+          <Number>0</Number>
+          <Text>INST</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <State>
+          <Number>1</Number>
+          <Text>INST</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_inst_enabled</ConfigKey>
+          <ButtonState>LeftButton</ButtonState>
+        </Connection>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_inst_solo</ConfigKey>
+          <ButtonState>RightButton</ButtonState>
+        </Connection>
+      </PushButton>
+      <PushButton>
+        <Tooltip>Solo instruments</Tooltip>
+        <ObjectName>StemSoloInstButton</ObjectName>
+        <Size>22f,24f</Size>
+        <NumberStates>1</NumberStates>
+        <State>
+          <Number>0</Number>
+          <Text>S</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_inst_solo</ConfigKey>
+        </Connection>
+      </PushButton>
+
+      <WidgetGroup><Size>4f,0min</Size></WidgetGroup>
+
+      <!-- ================= RESET + ENGINE MODE ================= -->
+      <PushButton>
+        <Tooltip>Reset: unmute all stems</Tooltip>
+        <ObjectName>StemResetButton</ObjectName>
+        <Size>30f,24f</Size>
+        <NumberStates>1</NumberStates>
+        <State>
+          <Number>0</Number>
+          <Text>ALL</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stem_reset</ConfigKey>
+        </Connection>
+      </PushButton>
+      <PushButton>
+        <Tooltip>Stem engine: DSP (instant) vs Spleeter AI (4 stems)</Tooltip>
+        <ObjectName>StemModeButton</ObjectName>
+        <Size>30f,24f</Size>
+        <NumberStates>2</NumberStates>
+        <State>
+          <Number>0</Number>
+          <Text>DSP</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <State>
+          <Number>1</Number>
+          <Text>AI</Text>
+          <Alignment>center</Alignment>
+        </State>
+        <Connection>
+          <ConfigKey><Variable name="Group"/>,stems_source</ConfigKey>
+        </Connection>
+      </PushButton>
+
+    </Children>
+  </WidgetGroup><!-- /StemStrip -->
+</Template>

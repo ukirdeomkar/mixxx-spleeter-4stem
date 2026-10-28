@@ -95,9 +95,9 @@ void StemWorkerThread::run() {
             m_pProgressControl->set(0.0);
         }
 
-        // Check if HTDemucs ONNX engine is available
-        if (!HTDemucsEngine::instance().isAvailable()) {
-            qDebug() << "StemWorkerThread: HTDemucs ONNX engine not available, aborting ML separation";
+        // Check if the Spleeter ONNX models are available
+        if (!SpleeterEngine::instance().isAvailable()) {
+            qDebug() << "StemWorkerThread: Spleeter ONNX models not available, aborting ML separation";
             if (m_pStatusControl) {
                 m_pStatusControl->set(0.0); // 0 = Idle
             }
@@ -192,44 +192,69 @@ void StemWorkerThread::run() {
 
         m_pBuffer->allocate(totalFrames);
 
-        qDebug() << "StemWorkerThread: Starting HTDemucs v4 25% overlap-add separation of"
-                 << pTrack->getTitle() << "(" << totalFrames << "frames)";
+        const int blocks = SpleeterEngine::blockCount(totalFrames);
+        qDebug() << "StemWorkerThread: progressive Spleeter 4-stem separation of"
+                 << pTrack->getTitle()
+                 << "(" << totalFrames << "frames," << blocks << "blocks)";
 
-        std::vector<float> voc_l(totalFrames);
-        std::vector<float> voc_r(totalFrames);
-        std::vector<float> drum_l(totalFrames);
-        std::vector<float> drum_r(totalFrames);
-        std::vector<float> inst_l(totalFrames);
-        std::vector<float> inst_r(totalFrames);
+        // Block scratch: one model block is 512 STFT frames and yields
+        // 521216 samples per stem/channel.
+        const size_t blockSamples = static_cast<size_t>(SpleeterEngine::kSamplesPerBlock);
+        std::vector<float> vocL(blockSamples);
+        std::vector<float> vocR(blockSamples);
+        std::vector<float> drumL(blockSamples);
+        std::vector<float> drumR(blockSamples);
+        std::vector<float> bassL(blockSamples);
+        std::vector<float> bassR(blockSamples);
+        std::vector<float> otherL(blockSamples);
+        std::vector<float> otherR(blockSamples);
 
-        std::atomic<bool> cancelFlag{false};
+        bool ok = true;
+        for (int b = 0; b < blocks; ++b) {
+            if (m_stopRequested.loadAcquire() || m_abortCurrentTrack.loadAcquire()) {
+                ok = false;
+                break;
+            }
 
-        bool ok = HTDemucsEngine::instance().separateTrack(
-                totalFrames,
-                in_l.data(), in_r.data(),
-                voc_l.data(), voc_r.data(),
-                drum_l.data(), drum_r.data(),
-                inst_l.data(), inst_r.data(),
-                [&](double progress) {
-                    if (m_pProgressControl) {
-                        m_pProgressControl->set(progress);
-                    }
-                    if (m_stopRequested.loadAcquire() || m_abortCurrentTrack.loadAcquire()) {
-                        cancelFlag.store(true);
-                    }
-                },
-                &cancelFlag);
+            if (!SpleeterEngine::instance().separateBlock(
+                        in_l.data(), in_r.data(), totalFrames, b,
+                        vocL.data(), vocR.data(),
+                        drumL.data(), drumR.data(),
+                        bassL.data(), bassR.data(),
+                        otherL.data(), otherR.data(),
+                        nullptr)) {
+                ok = false;
+                break;
+            }
 
-        if (ok && !cancelFlag.load()) {
-            m_pBuffer->writeChunk(
-                    0, totalFrames,
-                    voc_l.data(), voc_r.data(),
-                    drum_l.data(), drum_r.data(),
-                    inst_l.data(), inst_r.data());
+            const uint32_t startFrame =
+                    static_cast<uint32_t>(b) * SpleeterEngine::kSamplesPerBlock;
+            const uint32_t count = static_cast<uint32_t>(
+                    SpleeterEngine::blockSampleCount(totalFrames, b));
+            if (count == 0) {
+                break;
+            }
 
-            StemCache::saveToCache(pTrack, m_pBuffer.get());
-            qDebug() << "StemWorkerThread: Successfully separated stems and saved cache for"
-                     << pTrack->getTitle();
+            // Publish this block immediately so the deck can switch from the
+            // DSP fallback to the real stems as soon as the first one lands.
+            m_pBuffer->writeChunk(startFrame, count,
+                    vocL.data(), vocR.data(),
+                    drumL.data(), drumR.data(),
+                    bassL.data(), bassR.data(),
+                    otherL.data(), otherR.data());
+
+            if (m_pProgressControl) {
+                m_pProgressControl->set(static_cast<double>(b + 1) / blocks);
+            }
+        }
+
+        if (ok && m_pBuffer->framesReady() >= totalFrames) {
+            // Raw float stems would be ~420 MB per five minute track, so disk
+            // caching stays off until a compressed format lands (see docs).
+            if (StemCache::isEnabled()) {
+                StemCache::saveToCache(pTrack, m_pBuffer.get());
+            }
+            qDebug() << "StemWorkerThread: separated 4 stems for" << pTrack->getTitle();
 
             if (m_pProgressControl) {
                 m_pProgressControl->set(1.0);
@@ -238,8 +263,9 @@ void StemWorkerThread::run() {
                 m_pStatusControl->set(2.0); // 2 = AI Stems Ready!
             }
         } else {
-            qDebug() << "StemWorkerThread: HTDemucs separation aborted or failed for"
-                     << pTrack->getTitle();
+            qDebug() << "StemWorkerThread: Spleeter separation aborted or failed for"
+                     << pTrack->getTitle()
+                     << "- ready frames:" << m_pBuffer->framesReady() << "/" << totalFrames;
             if (m_pStatusControl) {
                 m_pStatusControl->set(0.0);
             }

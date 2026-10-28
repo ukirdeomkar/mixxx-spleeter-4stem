@@ -7,6 +7,15 @@
 
 namespace mixxx {
 
+/// Whole-track storage for the four separated stems.
+///
+/// Frames are published progressively: the worker writes block after block and
+/// `framesReady()` is the length of the contiguous prefix that is safe to read.
+/// Frames past that prefix have not been separated yet and must fall back to the
+/// original mix.
+///
+/// Memory: 4 stems * 2 channels * frames * 4 bytes, i.e. roughly 420 MB for a
+/// five minute track. See docs/ai-stems-spleeter.md before raising this.
 class StemTrackBuffer {
   public:
     StemTrackBuffer();
@@ -30,13 +39,14 @@ class StemTrackBuffer {
         return m_totalFrames;
     }
 
-    // Write a separated chunk into the buffer
+    // Write a separated chunk into the buffer (vocals, drums, bass, other)
     void writeChunk(
             uint32_t startFrame,
             uint32_t numFrames,
             const float* voc_l, const float* voc_r,
             const float* drum_l, const float* drum_r,
-            const float* inst_l, const float* inst_r);
+            const float* bass_l, const float* bass_r,
+            const float* other_l, const float* other_r);
 
     // Read separated stem samples for a range of frames
     void readFrames(
@@ -44,7 +54,8 @@ class StemTrackBuffer {
             uint32_t numFrames,
             float* voc_l, float* voc_r,
             float* drum_l, float* drum_r,
-            float* inst_l, float* inst_r) const;
+            float* bass_l, float* bass_r,
+            float* other_l, float* other_r) const;
 
   private:
     uint32_t m_totalFrames{0};
@@ -54,8 +65,10 @@ class StemTrackBuffer {
     std::vector<float> m_vocR;
     std::vector<float> m_drumL;
     std::vector<float> m_drumR;
-    std::vector<float> m_instL;
-    std::vector<float> m_instR;
+    std::vector<float> m_bassL;
+    std::vector<float> m_bassR;
+    std::vector<float> m_otherL;
+    std::vector<float> m_otherR;
 };
 
 } // namespace mixxx

@@ -85,3 +85,100 @@ Models are staged at `~/Library/Application Support/Mixxx/models/spleeter_<stem>
 - Spleeter separation quality is lower than Demucs (that's the speed trade).
 - Progressive mode can expose unseparated audio after seeking ahead of `framesReady`.
 - 8 GB RAM is the hard ceiling for two stemmed decks.
+
+---
+
+# Implementation status
+
+## Engine (`stemseparator.{h,cpp}`, new `spleeterstft.{h,cpp}`)
+
+`HTDemucsEngine` is replaced by `SpleeterEngine`, which keeps the upstream file
+names so the diff stays readable.
+
+- Four `Ort::Session`s (`spleeter_{vocals,drums,bass,other}.onnx`), fp32,
+  4 intra-op threads, one shared `Ort::Env`.
+- The STFT frontend / iSTFT lives in `spleeterstft.{h,cpp}`: periodic Hann
+  (4096), hop 1024, 44.1 kHz, `abs(rfft)[:1024]` fed to the nets, soft ratio mask
+  `(e^2 + 1e-10/4) / (sum e^2 + 1e-10)` applied to the original complex spectrum,
+  band extension `1024 -> 2049` with the per-frame **mask mean**, weighted
+  overlap-add inverse.
+- FFT comes from FFTW **single precision** (`FFTW3f`, already part of the Mixxx
+  dependency bundle). A hand-written radix-2 FFT would have cost ~5 s per five
+  minute track; `fftwf` costs well under one second.
+
+### Block geometry (this is what makes it progressive)
+
+The ONNX graphs have a fixed 512-frame time axis, but a frame's window also
+touches its neighbours, so a 512-frame model block only *owns* 509 frames of
+output:
+
+```
+kFramesPerBlock = 512 - (4096/1024 - 1) = 509
+kSamplesPerBlock = 509 * 1024        = 521216 samples (~11.8 s)
+block k: frames [509k, 509k + 512) -> signal samples [509k*1024, +521216)
+```
+
+Consecutive blocks therefore tile the track with no gaps and no double
+counting, and every output sample is normalised only by the frames that
+actually contributed to it. Blocks overlap by 3 frames (~0.6 % extra inference).
+
+## Validation
+
+- `spleeterstft` reconstruction with uniform 0.25 masks over a 1.5 M sample
+  stereo signal: **−137.8 dB** (float32), i.e. the STFT, mask, band extension,
+  iSTFT and block tiling invert each other exactly.
+- Runtime self-check in `SpleeterEngine::separateBlock`, enabled with
+  `MIXXX_DEBUG_SPLEETER_STEMS=1`, logs `sum(stems) - mix` per block. Spleeter's
+  masks sum to one, so this must be very negative; a positive-ish value means the
+  window, the hop or the band extension is wrong.
+- `src/test/stemstest.cpp` covers block tiling, the 4-way unity-sum DSP split,
+  buffer round-trip and the end-to-end reconstruction (skipped when the models
+  are absent).
+
+## Progressive worker (`stemworkerthread.cpp`)
+
+The track is decoded once, then separated block by block; each block is
+published with `writeChunk()` as soon as it lands. First audio is therefore
+available after ~1 block of inference (~2 s) instead of after a whole track
+(~52 s for a 5 minute track at 5.8× real-time).
+
+Until a region is ready the deck keeps using the zero-latency DSP split, so the
+first seconds of a freshly loaded track are DSP stems that morph into AI stems.
+
+## Four stems end to end
+
+- `StemTrackBuffer`: vocals/drums/bass/other, 8 channel planes, progressive
+  `framesReady` prefix.
+- `StemChannelProcessor`: new `stem_bass_enabled`, `stem_bass_volume`,
+  `stem_bass_solo`; the "other instruments" stem keeps the upstream
+  `stem_inst_*` control names so existing mappings and the skin keep working.
+- `StemDspIsolator`: 4-way split (bass = <220 Hz band, drums = transients,
+  vocals = centre/high extraction, other = residual) which still sums to unity.
+- LateNight skin: the stem buttons no longer live in the cramped transport row
+  (only two of the four fit there). They are a dedicated strip above the track
+  title, one section per stem (`res/skins/LateNight/decks/stems_strip.xml`):
+  `VOC | S  DRUM | S  BASS | S  INST | S  ALL  AI`.
+
+## Cache
+
+Disk caching is **disabled** (`StemCache::isEnabled() == false`): raw float
+stems are ~420 MB per five minute track. The cache format was bumped to
+`MIXSTEM2` (4 stems) so stale 3-stem caches are ignored.
+
+## Build notes (macOS, Mixxx 2.5 deps)
+
+- Use the macOS **12.1** SDK. 11.3 lacks `std::bit_ceil`; 12.3+ and 13.x ship a
+  `concepts` header that Qt 6.5's `moc` cannot parse (`namespace ranges::inline __cpo`).
+- `-DQML=OFF` is fine: LateNight is a legacy XML skin.
+- `-DBUILD_BENCH=OFF` (benchmarks require unit tests).
+- `libonnxruntime.dylib` comes from `build/_deps/onnxruntime_prebuilt-src/lib`
+  and must be copied into the app bundle for distribution, together with the
+  four models.
+
+## Still open
+
+- FLX4 mapping: the Mixxx 2.6 mapping has SHIFT+KEYBOARD stem mode (pads 1-4
+  mute, SHIFT+pads solo); this 2.5-based fork predates it and needs a backport.
+- Recording a stem-bus mix, and per-stem FX sends.
+- Optional: derive the fourth stem as `mix - (voc+drum+bass)` to save one iSTFT
+  per frame, and compress a disk cache (FLAC/int16) to make reloads instant.

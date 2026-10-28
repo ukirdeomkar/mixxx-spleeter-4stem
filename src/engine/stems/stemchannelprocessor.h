@@ -28,6 +28,7 @@ class StemChannelProcessor : public QObject {
   public slots:
     void slotSoloVocals(double v);
     void slotSoloDrums(double v);
+    void slotSoloBass(double v);
     void slotSoloInst(double v);
     void slotResetStems(double v);
     void slotSourceChanged(double v);
@@ -41,14 +42,17 @@ class StemChannelProcessor : public QObject {
     std::unique_ptr<ControlPushButton> m_pStemsActive;
     std::unique_ptr<ControlPushButton> m_pStemVocalsEnabled;
     std::unique_ptr<ControlPushButton> m_pStemDrumsEnabled;
+    std::unique_ptr<ControlPushButton> m_pStemBassEnabled;
     std::unique_ptr<ControlPushButton> m_pStemInstEnabled;
 
     std::unique_ptr<ControlPotmeter> m_pStemVocalsVolume;
     std::unique_ptr<ControlPotmeter> m_pStemDrumsVolume;
+    std::unique_ptr<ControlPotmeter> m_pStemBassVolume;
     std::unique_ptr<ControlPotmeter> m_pStemInstVolume;
 
     std::unique_ptr<ControlPushButton> m_pStemVocalsSolo;
     std::unique_ptr<ControlPushButton> m_pStemDrumsSolo;
+    std::unique_ptr<ControlPushButton> m_pStemBassSolo;
     std::unique_ptr<ControlPushButton> m_pStemInstSolo;
     std::unique_ptr<ControlPushButton> m_pStemReset;
 
@@ -66,6 +70,8 @@ class StemChannelProcessor : public QObject {
     std::vector<float> m_scratchVocR;
     std::vector<float> m_scratchDrumL;
     std::vector<float> m_scratchDrumR;
+    std::vector<float> m_scratchBassL;
+    std::vector<float> m_scratchBassR;
     std::vector<float> m_scratchInstL;
     std::vector<float> m_scratchInstR;
 };

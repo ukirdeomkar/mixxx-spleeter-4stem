@@ -371,9 +371,7 @@
           <WidgetGroup><Size>2f,0min</Size></WidgetGroup>
           <WidgetGroup><SizePolicy>i,min</SizePolicy><MaximumSize>12,</MaximumSize></WidgetGroup>
 
-          <!-- STEMS SEPARATION CONTROLS -->
-          <Template src="skins:LateNight/decks/stems_controls.xml"/>
-
+          <!-- Stem controls moved to their own strip above the track title -->
           <WidgetGroup><Size>2f,0min</Size></WidgetGroup>
           <WidgetGroup><SizePolicy>i,min</SizePolicy></WidgetGroup>
         </Children>

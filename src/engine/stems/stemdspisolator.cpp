@@ -75,7 +75,8 @@ void StemDspIsolator::process(
         int numFrames,
         double vocalsGain,
         double drumsGain,
-        double instGain) {
+        double bassGain,
+        double otherGain) {
     if (!pInOut || numFrames <= 0) {
         return;
     }
@@ -83,7 +84,8 @@ void StemDspIsolator::process(
     // Fast bit-exact bypass if all gains are practically unity
     if (std::abs(vocalsGain - 1.0) < 0.0001 &&
         std::abs(drumsGain - 1.0) < 0.0001 &&
-        std::abs(instGain - 1.0) < 0.0001) {
+        std::abs(bassGain - 1.0) < 0.0001 &&
+        std::abs(otherGain - 1.0) < 0.0001) {
         return;
     }
 
@@ -225,23 +227,30 @@ void StemDspIsolator::process(
         const double voc_l = voc_mid_m + voc_high_m;
         const double voc_r = voc_mid_m + voc_high_m;
 
-        // Drums: full low band (< 220 Hz kick/sub) + snare mid transients + cymbal high transients
+        // Bass: the whole low band (< 220 Hz) - kick body and sub bassline
+        const double bass_l = low_l;
+        const double bass_r = low_r;
+
+        // Drums: snare mid transients + cymbal high transients (no low band, that is bass)
         const double drum_mid_m = m_smoothTransient * (mid_m - voc_mid_m);
         const double drum_high_m = m_smoothTransient * (high_m - voc_high_m);
         const double drum_high_s = m_smoothTransient * high_s;
-        const double drum_l = low_l + drum_mid_m + drum_high_m + drum_high_s;
-        const double drum_r = low_r + drum_mid_m + drum_high_m - drum_high_s;
+        const double drum_l = drum_mid_m + drum_high_m + drum_high_s;
+        const double drum_r = drum_mid_m + drum_high_m - drum_high_s;
 
-        // Instruments: musical residual (synthesizers, guitars, pianos, stereo reverbs)
-        // By subtracting drums and vocals from input, unity sum is 100% mathematically conserved!
-        const double inst_l = in_l - drum_l - voc_l;
-        const double inst_r = in_r - drum_r - voc_r;
+        // Other instruments: musical residual (synthesizers, guitars, pianos, reverbs)
+        // By subtracting the other three stems from the input, the 4-way split sums
+        // to unity exactly, so unity gains reproduce the original bit for bit.
+        const double other_l = in_l - bass_l - drum_l - voc_l;
+        const double other_r = in_r - bass_r - drum_r - voc_r;
 
         // =====================================================================
         // Step 7: Apply Gains and Sum Output
         // =====================================================================
-        const double out_l = vocalsGain * voc_l + drumsGain * drum_l + instGain * inst_l;
-        const double out_r = vocalsGain * voc_r + drumsGain * drum_r + instGain * inst_r;
+        const double out_l = vocalsGain * voc_l + drumsGain * drum_l +
+                bassGain * bass_l + otherGain * other_l;
+        const double out_r = vocalsGain * voc_r + drumsGain * drum_r +
+                bassGain * bass_r + otherGain * other_r;
 
         pInOut[2 * i] = static_cast<CSAMPLE>(out_l);
         pInOut[2 * i + 1] = static_cast<CSAMPLE>(out_r);

@@ -9,51 +9,52 @@
 #endif
 #endif
 
-#include <QDir>
-#include <QFileInfo>
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QStandardPaths>
 #include <QDebug>
+
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <thread>
-#include <algorithm>
+#include <vector>
 
 namespace mixxx {
 
 #ifdef MIXXX_HAS_ONNXRUNTIME
 
 namespace {
-const char* const kInputNames[] = {"mix"};
-const char* const kOutputNames[] = {"stems"};
 
-void configureSessionOptions(Ort::SessionOptions& options) {
-    options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+constexpr char kInputName[] = "x";
+constexpr char kOutputName[] = "y";
 
-#if defined(__ANDROID__) || defined(ANDROID)
-    // On mobile devices, dynamically clamp thread pool to 2-4 threads to prevent thermal throttling
-    const unsigned int hwThreads = std::thread::hardware_concurrency();
-    const unsigned int numThreads = std::max(2u, std::min(4u, hwThreads == 0 ? 2u : hwThreads));
-    options.SetIntraOpNumThreads(numThreads);
+const char* const kStemFileNames[SpleeterEngine::kStemCount] = {
+        "spleeter_vocals.onnx",
+        "spleeter_drums.onnx",
+        "spleeter_bass.onnx",
+        "spleeter_other.onnx",
+};
 
-    // Enable hardware NPU/GPU acceleration via Android NNAPI execution provider
-    try {
-        Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_Nnapi(options, 0));
-        qDebug() << "HTDemucsEngine: Android NNAPI hardware execution provider active";
-    } catch (const std::exception& e) {
-        qDebug() << "HTDemucsEngine: NNAPI execution provider fallback to CPU:" << e.what();
-    }
-#else
-    options.SetIntraOpNumThreads(8);
-#endif
-}
+const char* const kStemLabels[SpleeterEngine::kStemCount] = {
+        "vocals",
+        "drums",
+        "bass",
+        "other",
+};
+
+// Spleeter's soft ratio mask epsilon: 1e-10 shared across all four stems.
+constexpr float kMaskEpsilon = 1e-10f / SpleeterEngine::kStemCount;
 
 QString findModelFile(const QString& filename) {
 #if defined(__ANDROID__) || defined(ANDROID)
-    // On Android, check if model is packaged in APK assets:/ and unpack to writable AppDataLocation
+    // On Android the model may ship inside the APK; unpack it once.
     const QString assetPath = "assets:/models/" + filename;
     if (QFile::exists(assetPath)) {
-        const QString destDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/models";
+        const QString destDir =
+                QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/models";
         QDir().mkpath(destDir);
         const QString destPath = destDir + "/" + filename;
         if (!QFileInfo::exists(destPath)) {
@@ -66,438 +67,456 @@ QString findModelFile(const QString& filename) {
 #endif
 
     const QStringList searchDirs = {
-        QCoreApplication::applicationDirPath() + "/models",
-        QCoreApplication::applicationDirPath() + "/../Resources/models",
-        QDir::currentPath() + "/models",
-        QDir::currentPath(),
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/models",
-        QDir::homePath() + "/.mixxx/models",
-        QDir::homePath() + "/Library/Application Support/Mixxx/models",
-        "/usr/share/mixxx/models",
-        "/usr/local/share/mixxx/models"
+            QCoreApplication::applicationDirPath() + "/models",
+            QCoreApplication::applicationDirPath() + "/../Resources/models",
+            QDir::currentPath() + "/models",
+            QDir::currentPath(),
+            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/models",
+            QDir::homePath() + "/.mixxx/models",
+            QDir::homePath() + "/Library/Application Support/Mixxx/models",
+            "/usr/share/mixxx/models",
+            "/usr/local/share/mixxx/models",
     };
 
     for (const auto& dir : searchDirs) {
-        QString candidate = dir + "/" + filename;
+        const QString candidate = dir + "/" + filename;
         if (QFileInfo::exists(candidate)) {
             return candidate;
         }
     }
     return QString();
 }
+
+void configureSessionOptions(Ort::SessionOptions& options) {
+    options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+    // Four stems are inferred one after another on the worker thread. Four
+    // intra-op threads measured fastest on the low-power Intel CPUs this fork
+    // targets; more threads only adds scheduling overhead.
+    const unsigned int hwThreads = std::thread::hardware_concurrency();
+    const unsigned int numThreads =
+            std::max(1u, std::min(4u, hwThreads == 0 ? 2u : hwThreads));
+    options.SetIntraOpNumThreads(static_cast<int>(numThreads));
+    options.SetInterOpNumThreads(1);
+}
+
 } // namespace
 
-HTDemucsEngine& HTDemucsEngine::instance() {
-    static HTDemucsEngine* s_instance = new HTDemucsEngine();
+SpleeterEngine& SpleeterEngine::instance() {
+    static SpleeterEngine* s_instance = new SpleeterEngine();
     return *s_instance;
 }
 
-HTDemucsEngine::HTDemucsEngine() {
-    // Build trapezoidal overlap-add window (flat center, linear crossfade edges)
-    m_window.assign(kSegmentSamples, 1.0f);
-    for (int i = 0; i < kOverlapSamples; ++i) {
-        const float fade = static_cast<float>(i) / static_cast<float>(kOverlapSamples);
-        m_window[i] = fade;
-        m_window[kSegmentSamples - 1 - i] = fade;
-    }
-}
+SpleeterEngine::SpleeterEngine() = default;
 
-HTDemucsEngine::~HTDemucsEngine() {
+SpleeterEngine::~SpleeterEngine() {
     finalize();
 }
 
-bool HTDemucsEngine::locateModel(QString* outPath) const {
-    // 1. Check for Fine-Tuned dual specialist models (Vocals + Drums)
-    const QString ftVoc = findModelFile("htdemucs_ft_vocals.onnx");
-    const QString ftDrum = findModelFile("htdemucs_ft_drums.onnx");
-    if (!ftVoc.isEmpty() && !ftDrum.isEmpty()) {
-        if (outPath) {
-            *outPath = ftVoc;
+bool SpleeterEngine::locateModels(QString modelPaths[kStemCount]) const {
+    for (int i = 0; i < kStemCount; ++i) {
+        modelPaths[i] = findModelFile(kStemFileNames[i]);
+        if (modelPaths[i].isEmpty()) {
+            return false;
         }
-        return true;
     }
+    return true;
+}
 
-    // 2. Check for base 4-stem model
-    const QString base = findModelFile("htdemucs.onnx");
-    if (!base.isEmpty()) {
-        if (outPath) {
-            *outPath = base;
+bool SpleeterEngine::isAvailable() {
+    QString paths[kStemCount];
+    return locateModels(paths);
+}
+
+bool SpleeterEngine::isInitialized() const {
+    if (!m_bInitialized || !m_pStft) {
+        return false;
+    }
+    for (int i = 0; i < kStemCount; ++i) {
+        if (!m_pSessions[i]) {
+            return false;
         }
-        return true;
     }
-
-    return false;
+    return true;
 }
 
-bool HTDemucsEngine::isAvailable() {
-    return locateModel(nullptr);
-}
-
-bool HTDemucsEngine::isInitialized() const {
-    return m_bInitialized && (m_pSession != nullptr || (m_pSessionVoc != nullptr && m_pSessionDrum != nullptr));
-}
-
-bool HTDemucsEngine::initialize(const QString& customModelPath) {
+bool SpleeterEngine::initialize(const QString& customModelDir) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
     if (isInitialized()) {
         return true;
     }
 
-    // Check for Fine-Tuned models first (SOTA quality)
-    const QString ftVocPath = findModelFile("htdemucs_ft_vocals.onnx");
-    const QString ftDrumPath = findModelFile("htdemucs_ft_drums.onnx");
-
-    if (customModelPath.isEmpty() && !ftVocPath.isEmpty() && !ftDrumPath.isEmpty()) {
-        try {
-            qDebug() << "HTDemucsEngine: Loading Fine-Tuned (HTDemucs-FT) ONNX specialist models...";
-            m_pEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "HTDemucsEngine");
-
-            Ort::SessionOptions sessionOptions;
-            configureSessionOptions(sessionOptions);
-
-            m_pSessionVoc = std::make_unique<Ort::Session>(
-                    *m_pEnv, ftVocPath.toUtf8().constData(), sessionOptions);
-            m_pSessionDrum = std::make_unique<Ort::Session>(
-                    *m_pEnv, ftDrumPath.toUtf8().constData(), sessionOptions);
-
-            m_pMemoryInfo = std::make_unique<Ort::MemoryInfo>(
-                    Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault));
-
-            m_bFineTuned = true;
-            m_bInitialized = true;
-            qDebug() << "HTDemucsEngine: Successfully initialized Fine-Tuned (HTDemucs-FT) models!";
-            return true;
-        } catch (const std::exception& e) {
-            qDebug() << "HTDemucsEngine: Failed loading FT models, falling back to base model:" << e.what();
+    QString paths[kStemCount];
+    if (!customModelDir.isEmpty()) {
+        for (int i = 0; i < kStemCount; ++i) {
+            const QString candidate = customModelDir + "/" + kStemFileNames[i];
+            if (!QFileInfo::exists(candidate)) {
+                qDebug() << "SpleeterEngine: missing model in custom dir:" << candidate;
+                return false;
+            }
+            paths[i] = candidate;
         }
-    }
-
-    QString modelPath = customModelPath;
-    if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
-        modelPath = findModelFile("htdemucs.onnx");
-        if (modelPath.isEmpty() || !QFileInfo::exists(modelPath)) {
-            qDebug() << "HTDemucsEngine: No htdemucs.onnx model found in system paths!";
-            return false;
-        }
+    } else if (!locateModels(paths)) {
+        qDebug() << "SpleeterEngine: could not find all spleeter_*.onnx models;"
+                 << "expected them next to the app, in ~/.mixxx/models or"
+                 << "~/Library/Application Support/Mixxx/models";
+        return false;
     }
 
     try {
-        qDebug() << "HTDemucsEngine: Loading ONNX model from" << modelPath;
-        m_pEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "HTDemucsEngine");
+        m_pEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "SpleeterEngine");
 
         Ort::SessionOptions sessionOptions;
         configureSessionOptions(sessionOptions);
 
-        m_pSession = std::make_unique<Ort::Session>(
-                *m_pEnv,
-                modelPath.toUtf8().constData(),
-                sessionOptions);
+        for (int i = 0; i < kStemCount; ++i) {
+            qDebug() << "SpleeterEngine: loading" << kStemLabels[i] << "from" << paths[i];
+            m_pSessions[i] = std::make_unique<Ort::Session>(
+                    *m_pEnv, paths[i].toUtf8().constData(), sessionOptions);
+        }
 
         m_pMemoryInfo = std::make_unique<Ort::MemoryInfo>(
                 Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault));
 
+        m_pStft = std::make_unique<spleeter::StftProcessor>();
+
+        const size_t frames = spleeter::kFramesPerSplit;
+        const size_t bins = spleeter::kBins;
+        const size_t modelBins = spleeter::kModelBins;
+        const size_t planeFloats = frames * modelBins;
+
+        m_specL.assign(frames * bins * 2, 0.0f);
+        m_specR.assign(frames * bins * 2, 0.0f);
+        m_netInput.assign(2 * planeFloats, 0.0f);
+        for (int i = 0; i < kStemCount; ++i) {
+            m_estimates[i].assign(2 * planeFloats, 0.0f);
+        }
+        m_denominator.assign(2 * planeFloats, 0.0f);
+        m_mask.assign(frames * modelBins, 0.0f);
+        m_maskedSpec.assign(frames * bins * 2, 0.0f);
+        m_ola.assign(frames * spleeter::kHopSize, 0.0f);
+
         m_bInitialized = true;
-        m_bFineTuned = false;
-        qDebug() << "HTDemucsEngine: HTDemucs v4 ONNX model successfully loaded and initialized!";
+        qDebug() << "SpleeterEngine: 4-stem Spleeter models loaded";
         return true;
     } catch (const Ort::Exception& e) {
-        qDebug() << "HTDemucsEngine: ONNX initialization failed:" << e.what();
-        m_bInitialized = false;
+        qDebug() << "SpleeterEngine: ONNX initialization failed:" << e.what();
+        finalize();
         return false;
     } catch (const std::exception& e) {
-        qDebug() << "HTDemucsEngine: Initialization failed:" << e.what();
-        m_bInitialized = false;
+        qDebug() << "SpleeterEngine: initialization failed:" << e.what();
+        finalize();
         return false;
     }
 }
 
-bool HTDemucsEngine::separateSegment(
-        const float* in_l, const float* in_r,
-        float* drums_l, float* drums_r,
+int SpleeterEngine::blockCount(uint32_t totalFrames) {
+    return spleeter::blockCount(static_cast<int>(totalFrames));
+}
+
+int SpleeterEngine::blockSampleCount(uint32_t totalFrames, int blockIndex) {
+    const int64_t start = static_cast<int64_t>(blockIndex) * spleeter::kSamplesPerBlock;
+    if (start >= static_cast<int64_t>(totalFrames)) {
+        return 0;
+    }
+    return static_cast<int>(std::min<int64_t>(
+            spleeter::kSamplesPerBlock, static_cast<int64_t>(totalFrames) - start));
+}
+
+bool SpleeterEngine::separateBlock(const float* in_l,
+        const float* in_r,
+        uint32_t totalFrames,
+        int blockIndex,
+        float* voc_l, float* voc_r,
+        float* drum_l, float* drum_r,
         float* bass_l, float* bass_r,
         float* other_l, float* other_r,
-        float* vocals_l, float* vocals_r) {
+        std::atomic<bool>* pCancelFlag) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    if (!m_bInitialized) {
-        if (!initialize()) {
-            return false;
-        }
+    if (!in_l || !in_r || totalFrames == 0) {
+        return false;
+    }
+    if (!m_bInitialized && !initialize()) {
+        return false;
+    }
+    if (blockIndex < 0 || blockIndex >= blockCount(totalFrames)) {
+        return false;
+    }
+    if (pCancelFlag && pCancelFlag->load(std::memory_order_relaxed)) {
+        return false;
     }
 
+    const int frames = spleeter::kFramesPerSplit;
+    const int bins = spleeter::kBins;
+    const int modelBins = spleeter::kModelBins;
+    const int firstFrame = spleeter::blockFirstFrame(blockIndex);
+    const size_t planeFloats = static_cast<size_t>(frames) * modelBins;
+
     try {
-        const int64_t N = kSegmentSamples;
-        const std::vector<int64_t> inputShape = {1, 2, N};
+        // 1. STFT of this block's frames for both channels.
+        m_pStft->forward(in_l, static_cast<int>(totalFrames), firstFrame, frames, m_specL.data());
+        m_pStft->forward(in_r, static_cast<int>(totalFrames), firstFrame, frames, m_specR.data());
 
-        // Prepare planar stereo buffer: [Left channel (N), Right channel (N)]
-        std::vector<float> inputData(2 * N);
-        std::memcpy(&inputData[0], in_l, N * sizeof(float));
-        std::memcpy(&inputData[N], in_r, N * sizeof(float));
-
-        Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
-                *m_pMemoryInfo,
-                inputData.data(), inputData.size(),
-                inputShape.data(), inputShape.size());
-
-        auto outputTensors = m_pSession->Run(
-                Ort::RunOptions{nullptr},
-                kInputNames, &inputTensor, 1,
-                kOutputNames, 1);
-
-        if (outputTensors.empty()) {
-            return false;
+        // 2. Magnitudes of the modelled band -> network input [2, 1, 512, 1024].
+        const float* planes[2] = {m_specL.data(), m_specR.data()};
+        for (int ch = 0; ch < 2; ++ch) {
+            const float* spec = planes[ch];
+            float* dstPlane = m_netInput.data() + ch * planeFloats;
+            for (int f = 0; f < frames; ++f) {
+                const float* src = spec + static_cast<size_t>(f) * bins * 2;
+                float* dst = dstPlane + static_cast<size_t>(f) * modelBins;
+                for (int k = 0; k < modelBins; ++k) {
+                    const float re = src[2 * k];
+                    const float im = src[2 * k + 1];
+                    dst[k] = std::sqrt(re * re + im * im);
+                }
+            }
         }
 
-        const float* outData = outputTensors[0].GetTensorData<float>();
-        // Output tensor shape is (1, 4, 2, 343980)
-        // Stems order: 0 = Drums, 1 = Bass, 2 = Other, 3 = Vocals
-        const size_t stemStride = 2 * N;
+        const char* const inputNames[] = {kInputName};
+        const char* const outputNames[] = {kOutputName};
+        std::vector<int64_t> inputShape = {2, 1, frames, modelBins};
+        Ort::Value inputTensor = Ort::Value::CreateTensor<float>(*m_pMemoryInfo,
+                m_netInput.data(),
+                m_netInput.size(),
+                inputShape.data(),
+                inputShape.size());
 
-        // Drums (stem 0)
-        if (drums_l) std::memcpy(drums_l, outData + 0 * stemStride, N * sizeof(float));
-        if (drums_r) std::memcpy(drums_r, outData + 0 * stemStride + N, N * sizeof(float));
+        // 3. Run the four stem models. The mask needs all four estimates.
+        for (int s = 0; s < kStemCount; ++s) {
+            if (pCancelFlag && pCancelFlag->load(std::memory_order_relaxed)) {
+                return false;
+            }
+            auto outputs = m_pSessions[s]->Run(Ort::RunOptions{nullptr},
+                    inputNames,
+                    &inputTensor,
+                    1,
+                    outputNames,
+                    1);
+            if (outputs.empty()) {
+                qDebug() << "SpleeterEngine: empty output for stem" << kStemLabels[s];
+                return false;
+            }
+            const float* data = outputs[0].GetTensorData<float>();
+            std::memcpy(m_estimates[s].data(), data, sizeof(float) * 2 * planeFloats);
+        }
 
-        // Bass (stem 1)
-        if (bass_l) std::memcpy(bass_l, outData + 1 * stemStride, N * sizeof(float));
-        if (bass_r) std::memcpy(bass_r, outData + 1 * stemStride + N, N * sizeof(float));
+        // 4. Wiener-style denominator over all four stems.
+        for (size_t i = 0; i < m_denominator.size(); ++i) {
+            float sum = 1e-10f;
+            for (int s = 0; s < kStemCount; ++s) {
+                const float e = m_estimates[s][i];
+                sum += e * e;
+            }
+            m_denominator[i] = sum;
+        }
 
-        // Other (stem 2)
-        if (other_l) std::memcpy(other_l, outData + 2 * stemStride, N * sizeof(float));
-        if (other_r) std::memcpy(other_r, outData + 2 * stemStride + N, N * sizeof(float));
+        float* outL[kStemCount] = {voc_l, drum_l, bass_l, other_l};
+        float* outR[kStemCount] = {voc_r, drum_r, bass_r, other_r};
+        const int sampleCount = blockSampleCount(totalFrames, blockIndex);
 
-        // Vocals (stem 3)
-        if (vocals_l) std::memcpy(vocals_l, outData + 3 * stemStride, N * sizeof(float));
-        if (vocals_r) std::memcpy(vocals_r, outData + 3 * stemStride + N, N * sizeof(float));
+        // 5. Apply each stem's mask to the original complex spectrum, extend
+        //    the band with the per-frame mask mean, then iSTFT.
+        for (int s = 0; s < kStemCount; ++s) {
+            if (!outL[s] || !outR[s]) {
+                continue;
+            }
+            for (int ch = 0; ch < 2; ++ch) {
+                if (pCancelFlag && pCancelFlag->load(std::memory_order_relaxed)) {
+                    return false;
+                }
+
+                const float* est = m_estimates[s].data() + ch * planeFloats;
+                const float* den = m_denominator.data() + ch * planeFloats;
+                const float* spec = planes[ch];
+
+                for (int f = 0; f < frames; ++f) {
+                    const float* e = est + static_cast<size_t>(f) * modelBins;
+                    const float* d = den + static_cast<size_t>(f) * modelBins;
+                    float* maskRow = m_mask.data() + static_cast<size_t>(f) * modelBins;
+
+                    float maskSum = 0.0f;
+                    for (int k = 0; k < modelBins; ++k) {
+                        const float value = e[k];
+                        const float m = (value * value + kMaskEpsilon) / d[k];
+                        maskRow[k] = m;
+                        maskSum += m;
+                    }
+                    // Spleeter's `average` band extension: everything above the
+                    // modelled band gets the per-frame mean of the mask.
+                    const float tail = maskSum / static_cast<float>(modelBins);
+
+                    float* dst = m_maskedSpec.data() + static_cast<size_t>(f) * bins * 2;
+                    const float* src = spec + static_cast<size_t>(f) * bins * 2;
+                    for (int k = 0; k < bins; ++k) {
+                        const float m = (k < modelBins) ? maskRow[k] : tail;
+                        dst[2 * k] = src[2 * k] * m;
+                        dst[2 * k + 1] = src[2 * k + 1] * m;
+                    }
+                }
+
+                m_pStft->inverse(m_maskedSpec.data(), frames, m_ola.data());
+
+                // Only [kPad, kPad + sampleCount) is fully covered by this
+                // block's frames; it maps to signal samples [start, start+count).
+                float* dest = (ch == 0) ? outL[s] : outR[s];
+                std::memcpy(dest,
+                        m_ola.data() + spleeter::kPad,
+                        sizeof(float) * sampleCount);
+            }
+        }
+
+        // Optional self-check: four ratio masks sum to one, so the stems must
+        // reconstruct the mix. Enable with MIXXX_DEBUG_SPLEETER_STEMS=1.
+        if (qEnvironmentVariableIsSet("MIXXX_DEBUG_SPLEETER_STEMS") &&
+                outL[0] && outR[0] && outL[1] && outR[1] &&
+                outL[2] && outR[2] && outL[3] && outR[3]) {
+            const uint32_t start = static_cast<uint32_t>(blockIndex) * kSamplesPerBlock;
+            double errEnergy = 0.0;
+            double refEnergy = 0.0;
+            for (int i = 0; i < sampleCount; ++i) {
+                const double sumL = static_cast<double>(outL[0][i]) + outL[1][i] +
+                        outL[2][i] + outL[3][i];
+                const double sumR = static_cast<double>(outR[0][i]) + outR[1][i] +
+                        outR[2][i] + outR[3][i];
+                const double refL = in_l[start + i];
+                const double refR = in_r[start + i];
+                errEnergy += (sumL - refL) * (sumL - refL) + (sumR - refR) * (sumR - refR);
+                refEnergy += refL * refL + refR * refR;
+            }
+            const double residualDb = 10.0 * std::log10(
+                    (errEnergy + 1e-30) / (refEnergy + 1e-30));
+            qDebug() << "SpleeterEngine: block" << blockIndex
+                     << "sum(stems) - mix =" << residualDb << "dB";
+        }
 
         return true;
     } catch (const Ort::Exception& e) {
-        qDebug() << "HTDemucsEngine: separateSegment failed:" << e.what();
+        qDebug() << "SpleeterEngine: inference failed:" << e.what();
+        return false;
+    } catch (const std::exception& e) {
+        qDebug() << "SpleeterEngine: separation failed:" << e.what();
         return false;
     }
 }
 
-bool HTDemucsEngine::separateSegment3Stem(
-        const float* in_l, const float* in_r,
+bool SpleeterEngine::separateTrack(uint32_t totalFrames,
+        const float* in_l,
+        const float* in_r,
         float* voc_l, float* voc_r,
         float* drum_l, float* drum_r,
-        float* inst_l, float* inst_r) {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-
-    if (!m_bInitialized) {
-        if (!initialize()) {
-            return false;
-        }
-    }
-
-    const int64_t N = kSegmentSamples;
-
-    // High-Fidelity Fine-Tuned (HTDemucs-FT) Path
-    if (m_bFineTuned && m_pSessionVoc && m_pSessionDrum) {
-        try {
-            const std::vector<int64_t> inputShape = {1, 2, N};
-            std::vector<float> inputData(2 * N);
-            std::memcpy(&inputData[0], in_l, N * sizeof(float));
-            std::memcpy(&inputData[N], in_r, N * sizeof(float));
-
-            // 1. Separate Vocals with Fine-Tuned specialist
-            Ort::Value inTensorVoc = Ort::Value::CreateTensor<float>(
-                    *m_pMemoryInfo,
-                    inputData.data(), inputData.size(),
-                    inputShape.data(), inputShape.size());
-
-            auto outVoc = m_pSessionVoc->Run(
-                    Ort::RunOptions{nullptr}, kInputNames, &inTensorVoc, 1, kOutputNames, 1);
-            if (outVoc.empty()) {
-                return false;
-            }
-
-            const float* outVocData = outVoc[0].GetTensorData<float>();
-            // Row 3 is fine-tuned vocals
-            if (voc_l) std::memcpy(voc_l, outVocData + 3 * (2 * N), N * sizeof(float));
-            if (voc_r) std::memcpy(voc_r, outVocData + 3 * (2 * N) + N, N * sizeof(float));
-
-            // 2. Separate Drums with Fine-Tuned specialist
-            Ort::Value inTensorDrum = Ort::Value::CreateTensor<float>(
-                    *m_pMemoryInfo,
-                    inputData.data(), inputData.size(),
-                    inputShape.data(), inputShape.size());
-
-            auto outDrum = m_pSessionDrum->Run(
-                    Ort::RunOptions{nullptr}, kInputNames, &inTensorDrum, 1, kOutputNames, 1);
-            if (outDrum.empty()) {
-                return false;
-            }
-
-            const float* outDrumData = outDrum[0].GetTensorData<float>();
-            // Row 0 is fine-tuned drums
-            if (drum_l) std::memcpy(drum_l, outDrumData + 0 * (2 * N), N * sizeof(float));
-            if (drum_r) std::memcpy(drum_r, outDrumData + 0 * (2 * N) + N, N * sizeof(float));
-
-            // 3. Perfect Transparent Residual Instruments: Inst = Mix - (Voc + Drum)
-            if (inst_l) {
-                for (int64_t i = 0; i < N; ++i) {
-                    inst_l[i] = in_l[i] - (voc_l ? voc_l[i] : 0.0f) - (drum_l ? drum_l[i] : 0.0f);
-                }
-            }
-            if (inst_r) {
-                for (int64_t i = 0; i < N; ++i) {
-                    inst_r[i] = in_r[i] - (voc_r ? voc_r[i] : 0.0f) - (drum_r ? drum_r[i] : 0.0f);
-                }
-            }
-            return true;
-        } catch (const Ort::Exception& e) {
-            qDebug() << "HTDemucsEngine: Fine-tuned separateSegment3Stem failed:" << e.what();
-            return false;
-        }
-    }
-
-    std::vector<float> bass_l(N), bass_r(N);
-    std::vector<float> other_l(N), other_r(N);
-
-    bool ok = separateSegment(
-            in_l, in_r,
-            drum_l, drum_r,
-            bass_l.data(), bass_r.data(),
-            other_l.data(), other_r.data(),
-            voc_l, voc_r);
-
-    if (!ok) {
-        return false;
-    }
-
-    // Combine Bass + Other into Instruments
-    if (inst_l) {
-        for (int i = 0; i < N; ++i) {
-            inst_l[i] = bass_l[i] + other_l[i];
-        }
-    }
-    if (inst_r) {
-        for (int i = 0; i < N; ++i) {
-            inst_r[i] = bass_r[i] + other_r[i];
-        }
-    }
-    return true;
-}
-
-bool HTDemucsEngine::separateTrack(
-        uint32_t totalFrames,
-        const float* in_l, const float* in_r,
-        float* voc_l, float* voc_r,
-        float* drum_l, float* drum_r,
-        float* inst_l, float* inst_r,
+        float* bass_l, float* bass_r,
+        float* other_l, float* other_r,
         std::function<void(double)> progressCallback,
         std::atomic<bool>* pCancelFlag) {
     if (totalFrames == 0 || !in_l || !in_r) {
         return false;
     }
 
-    // Initialize output buffers to zero
-    std::memset(voc_l, 0, totalFrames * sizeof(float));
-    std::memset(voc_r, 0, totalFrames * sizeof(float));
-    std::memset(drum_l, 0, totalFrames * sizeof(float));
-    std::memset(drum_r, 0, totalFrames * sizeof(float));
-    std::memset(inst_l, 0, totalFrames * sizeof(float));
-    std::memset(inst_r, 0, totalFrames * sizeof(float));
+    const int blocks = blockCount(totalFrames);
+    if (blocks <= 0) {
+        return false;
+    }
 
-    std::vector<float> weight(totalFrames, 0.0f);
+    std::vector<float> blockVocL(spleeter::kSamplesPerBlock);
+    std::vector<float> blockVocR(spleeter::kSamplesPerBlock);
+    std::vector<float> blockDrumL(spleeter::kSamplesPerBlock);
+    std::vector<float> blockDrumR(spleeter::kSamplesPerBlock);
+    std::vector<float> blockBassL(spleeter::kSamplesPerBlock);
+    std::vector<float> blockBassR(spleeter::kSamplesPerBlock);
+    std::vector<float> blockOtherL(spleeter::kSamplesPerBlock);
+    std::vector<float> blockOtherR(spleeter::kSamplesPerBlock);
 
-    const uint32_t stride = kStrideSamples;
-    const uint32_t nChunks = (totalFrames + stride - 1) / stride;
-
-    std::vector<float> chunkInL(kSegmentSamples, 0.0f);
-    std::vector<float> chunkInR(kSegmentSamples, 0.0f);
-    std::vector<float> chunkVocL(kSegmentSamples, 0.0f);
-    std::vector<float> chunkVocR(kSegmentSamples, 0.0f);
-    std::vector<float> chunkDrumL(kSegmentSamples, 0.0f);
-    std::vector<float> chunkDrumR(kSegmentSamples, 0.0f);
-    std::vector<float> chunkInstL(kSegmentSamples, 0.0f);
-    std::vector<float> chunkInstR(kSegmentSamples, 0.0f);
-
-    for (uint32_t chunkIdx = 0; chunkIdx < nChunks; ++chunkIdx) {
+    for (int b = 0; b < blocks; ++b) {
         if (pCancelFlag && pCancelFlag->load(std::memory_order_relaxed)) {
             return false;
         }
 
-        const uint32_t start = chunkIdx * stride;
-        const uint32_t end = std::min(start + static_cast<uint32_t>(kSegmentSamples), totalFrames);
-        const uint32_t chunkLen = end - start;
-
-        // Copy input with zero-padding if less than kSegmentSamples
-        std::fill(chunkInL.begin(), chunkInL.end(), 0.0f);
-        std::fill(chunkInR.begin(), chunkInR.end(), 0.0f);
-        std::memcpy(chunkInL.data(), in_l + start, chunkLen * sizeof(float));
-        std::memcpy(chunkInR.data(), in_r + start, chunkLen * sizeof(float));
-
-        bool ok = separateSegment3Stem(
-                chunkInL.data(), chunkInR.data(),
-                chunkVocL.data(), chunkVocR.data(),
-                chunkDrumL.data(), chunkDrumR.data(),
-                chunkInstL.data(), chunkInstR.data());
-
-        if (!ok) {
+        if (!separateBlock(in_l, in_r, totalFrames, b,
+                    blockVocL.data(), blockVocR.data(),
+                    blockDrumL.data(), blockDrumR.data(),
+                    blockBassL.data(), blockBassR.data(),
+                    blockOtherL.data(), blockOtherR.data(),
+                    pCancelFlag)) {
             return false;
         }
 
-        // Overlap-add into output buffers
-        for (uint32_t i = 0; i < chunkLen; ++i) {
-            const float w = m_window[i];
-            const uint32_t dest = start + i;
-            voc_l[dest] += chunkVocL[i] * w;
-            voc_r[dest] += chunkVocR[i] * w;
-            drum_l[dest] += chunkDrumL[i] * w;
-            drum_r[dest] += chunkDrumR[i] * w;
-            inst_l[dest] += chunkInstL[i] * w;
-            inst_r[dest] += chunkInstR[i] * w;
-            weight[dest] += w;
+        const uint32_t start = static_cast<uint32_t>(b) * spleeter::kSamplesPerBlock;
+        const size_t count = static_cast<size_t>(blockSampleCount(totalFrames, b));
+        if (count == 0) {
+            break;
         }
+
+        std::memcpy(voc_l + start, blockVocL.data(), sizeof(float) * count);
+        std::memcpy(voc_r + start, blockVocR.data(), sizeof(float) * count);
+        std::memcpy(drum_l + start, blockDrumL.data(), sizeof(float) * count);
+        std::memcpy(drum_r + start, blockDrumR.data(), sizeof(float) * count);
+        std::memcpy(bass_l + start, blockBassL.data(), sizeof(float) * count);
+        std::memcpy(bass_r + start, blockBassR.data(), sizeof(float) * count);
+        std::memcpy(other_l + start, blockOtherL.data(), sizeof(float) * count);
+        std::memcpy(other_r + start, blockOtherR.data(), sizeof(float) * count);
 
         if (progressCallback) {
-            progressCallback(static_cast<double>(chunkIdx + 1) / nChunks);
+            progressCallback(static_cast<double>(b + 1) / blocks);
         }
-    }
-
-    // Normalize by overlap weight
-    for (uint32_t i = 0; i < totalFrames; ++i) {
-        const float w = std::max(weight[i], 1e-6f);
-        voc_l[i] /= w;
-        voc_r[i] /= w;
-        drum_l[i] /= w;
-        drum_r[i] /= w;
-        inst_l[i] /= w;
-        inst_r[i] /= w;
     }
 
     return true;
 }
 
-void HTDemucsEngine::finalize() {
-    m_pSessionVoc.reset();
-    m_pSessionDrum.reset();
-    m_pSession.reset();
+void SpleeterEngine::finalize() {
+    for (int i = 0; i < kStemCount; ++i) {
+        m_pSessions[i].reset();
+    }
     m_pMemoryInfo.reset();
     m_pEnv.reset();
+    m_pStft.reset();
     m_bInitialized = false;
-    m_bFineTuned = false;
 }
 
 #else // !MIXXX_HAS_ONNXRUNTIME
 
-HTDemucsEngine& HTDemucsEngine::instance() {
-    static HTDemucsEngine* s_instance = new HTDemucsEngine();
+SpleeterEngine& SpleeterEngine::instance() {
+    static SpleeterEngine* s_instance = new SpleeterEngine();
     return *s_instance;
 }
 
-HTDemucsEngine::HTDemucsEngine() {}
-HTDemucsEngine::~HTDemucsEngine() {}
-bool HTDemucsEngine::locateModel(QString*) const { return false; }
-bool HTDemucsEngine::isAvailable() { return false; }
-bool HTDemucsEngine::isInitialized() const { return false; }
-bool HTDemucsEngine::initialize(const QString&) { return false; }
-bool HTDemucsEngine::separateSegment(const float*, const float*, float*, float*, float*, float*, float*, float*, float*, float*) { return false; }
-bool HTDemucsEngine::separateSegment3Stem(const float*, const float*, float*, float*, float*, float*, float*, float*) { return false; }
-bool HTDemucsEngine::separateTrack(uint32_t, const float*, const float*, float*, float*, float*, float*, float*, float*, std::function<void(double)>, std::atomic<bool>*) { return false; }
-void HTDemucsEngine::finalize() {}
+SpleeterEngine::SpleeterEngine() = default;
+SpleeterEngine::~SpleeterEngine() = default;
+
+bool SpleeterEngine::locateModels(QString* modelPaths) const {
+    Q_UNUSED(modelPaths);
+    return false;
+}
+bool SpleeterEngine::isAvailable() {
+    return false;
+}
+bool SpleeterEngine::isInitialized() const {
+    return false;
+}
+bool SpleeterEngine::initialize(const QString&) {
+    return false;
+}
+int SpleeterEngine::blockCount(uint32_t) {
+    return 0;
+}
+int SpleeterEngine::blockSampleCount(uint32_t, int) {
+    return 0;
+}
+bool SpleeterEngine::separateBlock(const float*, const float*, uint32_t, int,
+        float*, float*, float*, float*, float*, float*, float*, float*,
+        std::atomic<bool>*) {
+    return false;
+}
+bool SpleeterEngine::separateTrack(uint32_t, const float*, const float*,
+        float*, float*, float*, float*, float*, float*, float*, float*,
+        std::function<void(double)>, std::atomic<bool>*) {
+    return false;
+}
+void SpleeterEngine::finalize() {
+}
 
 #endif // MIXXX_HAS_ONNXRUNTIME
 

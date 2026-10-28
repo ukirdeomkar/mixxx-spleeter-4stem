@@ -1057,6 +1057,20 @@ WLibrarySidebar {
   background-color: transparent;
 }
 
+#StemStrip {
+  background-color: transparent;
+}
+
+#StemStrip WPushButton {
+  border-radius: 3px;
+  font-family: "Open Sans", "Segoe UI", sans-serif;
+  font-size: 10px;
+  font-weight: bold;
+  text-align: center;
+  margin: 0px 1px;
+  padding: 0px;
+}
+
 #StemControls WPushButton {
   border-radius: 3px;
   font-family: "Open Sans", "Segoe UI", sans-serif;
@@ -1101,6 +1115,29 @@ WPushButton#StemInstButton[value="0"] {
   background-color: #1a1a1a;
   color: #4b5563;
   border: 1px solid #2d2d2d;
+}
+
+/* BASS: Rose/Pink */
+WPushButton#StemBassButton[value="1"] {
+  background-color: #be123c;
+  color: #ffffff;
+  border: 1px solid #fb7185;
+}
+WPushButton#StemBassButton[value="0"] {
+  background-color: #1a1a1a;
+  color: #4b5563;
+  border: 1px solid #2d2d2d;
+}
+
+WPushButton#StemSoloBassButton {
+  background-color: #2b1017;
+  color: #fda4af;
+  border: 1px solid #9f1239;
+  font-size: 9px;
+}
+WPushButton#StemSoloBassButton:pressed {
+  background-color: #be123c;
+  color: #ffffff;
 }
 
 /* RESET ALL BUTTON */

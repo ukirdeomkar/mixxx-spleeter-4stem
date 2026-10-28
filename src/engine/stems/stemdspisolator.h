@@ -17,12 +17,15 @@ class StemDspIsolator {
 
     // Process a buffer of interleaved stereo samples in place.
     // numFrames is the number of stereo frames (iBufferSize / 2).
+    // Four virtual stems: vocals, drums, bass and "other" instruments.
+    // Gains are applied to a 4-way split whose sum is unity when all are 1.
     void process(
             CSAMPLE* pInOut,
             int numFrames,
             double vocalsGain,
             double drumsGain,
-            double instGain);
+            double bassGain,
+            double otherGain);
 
   private:
     // Cytomic SVF State for 2nd-order section

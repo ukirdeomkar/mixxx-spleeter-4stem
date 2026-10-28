@@ -24,6 +24,10 @@ StemChannelProcessor::StemChannelProcessor(const QString& group, EngineBuffer* p
     m_pStemDrumsEnabled->setButtonMode(ControlPushButton::TOGGLE);
     m_pStemDrumsEnabled->set(1.0);
 
+    m_pStemBassEnabled = std::make_unique<ControlPushButton>(ConfigKey(m_group, "stem_bass_enabled"));
+    m_pStemBassEnabled->setButtonMode(ControlPushButton::TOGGLE);
+    m_pStemBassEnabled->set(1.0);
+
     m_pStemInstEnabled = std::make_unique<ControlPushButton>(ConfigKey(m_group, "stem_inst_enabled"));
     m_pStemInstEnabled->setButtonMode(ControlPushButton::TOGGLE);
     m_pStemInstEnabled->set(1.0);
@@ -35,6 +39,10 @@ StemChannelProcessor::StemChannelProcessor(const QString& group, EngineBuffer* p
     m_pStemDrumsVolume = std::make_unique<ControlPotmeter>(ConfigKey(m_group, "stem_drums_volume"), 0.0, 1.0);
     m_pStemDrumsVolume->set(1.0);
     m_pStemDrumsVolume->setDefaultValue(1.0);
+
+    m_pStemBassVolume = std::make_unique<ControlPotmeter>(ConfigKey(m_group, "stem_bass_volume"), 0.0, 1.0);
+    m_pStemBassVolume->set(1.0);
+    m_pStemBassVolume->setDefaultValue(1.0);
 
     m_pStemInstVolume = std::make_unique<ControlPotmeter>(ConfigKey(m_group, "stem_inst_volume"), 0.0, 1.0);
     m_pStemInstVolume->set(1.0);
@@ -49,6 +57,11 @@ StemChannelProcessor::StemChannelProcessor(const QString& group, EngineBuffer* p
     m_pStemDrumsSolo->setButtonMode(ControlPushButton::PUSH);
     connect(m_pStemDrumsSolo.get(), &ControlPushButton::valueChanged,
             this, &StemChannelProcessor::slotSoloDrums);
+
+    m_pStemBassSolo = std::make_unique<ControlPushButton>(ConfigKey(m_group, "stem_bass_solo"));
+    m_pStemBassSolo->setButtonMode(ControlPushButton::PUSH);
+    connect(m_pStemBassSolo.get(), &ControlPushButton::valueChanged,
+            this, &StemChannelProcessor::slotSoloBass);
 
     m_pStemInstSolo = std::make_unique<ControlPushButton>(ConfigKey(m_group, "stem_inst_solo"));
     m_pStemInstSolo->setButtonMode(ControlPushButton::PUSH);
@@ -96,6 +109,7 @@ void StemChannelProcessor::slotSoloVocals(double v) {
     if (v > 0.0) {
         m_pStemVocalsEnabled->set(1.0);
         m_pStemDrumsEnabled->set(0.0);
+        m_pStemBassEnabled->set(0.0);
         m_pStemInstEnabled->set(0.0);
     }
 }
@@ -104,6 +118,16 @@ void StemChannelProcessor::slotSoloDrums(double v) {
     if (v > 0.0) {
         m_pStemVocalsEnabled->set(0.0);
         m_pStemDrumsEnabled->set(1.0);
+        m_pStemBassEnabled->set(0.0);
+        m_pStemInstEnabled->set(0.0);
+    }
+}
+
+void StemChannelProcessor::slotSoloBass(double v) {
+    if (v > 0.0) {
+        m_pStemVocalsEnabled->set(0.0);
+        m_pStemDrumsEnabled->set(0.0);
+        m_pStemBassEnabled->set(1.0);
         m_pStemInstEnabled->set(0.0);
     }
 }
@@ -112,6 +136,7 @@ void StemChannelProcessor::slotSoloInst(double v) {
     if (v > 0.0) {
         m_pStemVocalsEnabled->set(0.0);
         m_pStemDrumsEnabled->set(0.0);
+        m_pStemBassEnabled->set(0.0);
         m_pStemInstEnabled->set(1.0);
     }
 }
@@ -120,9 +145,11 @@ void StemChannelProcessor::slotResetStems(double v) {
     if (v > 0.0) {
         m_pStemVocalsEnabled->set(1.0);
         m_pStemDrumsEnabled->set(1.0);
+        m_pStemBassEnabled->set(1.0);
         m_pStemInstEnabled->set(1.0);
         m_pStemVocalsVolume->set(1.0);
         m_pStemDrumsVolume->set(1.0);
+        m_pStemBassVolume->set(1.0);
         m_pStemInstVolume->set(1.0);
     }
 }
@@ -181,18 +208,35 @@ void StemChannelProcessor::process(CSAMPLE* pInOut, int iBufferSize, audio::Fram
 
     const double vocGain = m_pStemVocalsEnabled->toBool() ? m_pStemVocalsVolume->get() : 0.0;
     const double drumGain = m_pStemDrumsEnabled->toBool() ? m_pStemDrumsVolume->get() : 0.0;
+    const double bassGain = m_pStemBassEnabled->toBool() ? m_pStemBassVolume->get() : 0.0;
     const double instGain = m_pStemInstEnabled->toBool() ? m_pStemInstVolume->get() : 0.0;
 
     // Fast path: if all gains are practically unity, skip processing completely
     if (std::abs(vocGain - 1.0) < 0.0001 &&
-        std::abs(drumGain - 1.0) < 0.0001 &&
-        std::abs(instGain - 1.0) < 0.0001) {
+            std::abs(drumGain - 1.0) < 0.0001 &&
+            std::abs(bassGain - 1.0) < 0.0001 &&
+            std::abs(instGain - 1.0) < 0.0001) {
         return;
     }
 
     const int numFrames = iBufferSize / 2;
 
-    // Check if ML AI stems are requested and ready for the current frame
+    const auto ensureScratch = [this](size_t frames) {
+        if (m_scratchVocL.size() < frames) {
+            m_scratchVocL.resize(frames);
+            m_scratchVocR.resize(frames);
+            m_scratchDrumL.resize(frames);
+            m_scratchDrumR.resize(frames);
+            m_scratchBassL.resize(frames);
+            m_scratchBassR.resize(frames);
+            m_scratchInstL.resize(frames);
+            m_scratchInstR.resize(frames);
+        }
+    };
+
+    // Check if AI stems are requested and separated far enough for this buffer.
+    // Frames that the progressive worker has not reached yet fall back to the
+    // zero-latency DSP split, so playback can start immediately after loading.
     bool usedMlStems = false;
     if (m_pStemsSource->get() >= 0.5 && playPos.isValid()) {
         const double reportedPos = playPos.value();
@@ -207,28 +251,24 @@ void StemChannelProcessor::process(CSAMPLE* pInOut, int iBufferSize, audio::Fram
             if (std::abs(effectiveSpeed - 1.0) < 0.001) {
                 // 1:1 playback speed - direct sample copy
                 if (m_pStemTrackBuffer->isRangeReady(startFrame, static_cast<uint32_t>(numFrames))) {
-                    if (m_scratchVocL.size() < static_cast<size_t>(numFrames)) {
-                        m_scratchVocL.resize(numFrames);
-                        m_scratchVocR.resize(numFrames);
-                        m_scratchDrumL.resize(numFrames);
-                        m_scratchDrumR.resize(numFrames);
-                        m_scratchInstL.resize(numFrames);
-                        m_scratchInstR.resize(numFrames);
-                    }
+                    ensureScratch(numFrames);
 
                     m_pStemTrackBuffer->readFrames(
                             startFrame, static_cast<uint32_t>(numFrames),
                             m_scratchVocL.data(), m_scratchVocR.data(),
                             m_scratchDrumL.data(), m_scratchDrumR.data(),
+                            m_scratchBassL.data(), m_scratchBassR.data(),
                             m_scratchInstL.data(), m_scratchInstR.data());
 
                     for (int i = 0; i < numFrames; ++i) {
                         const double out_l = vocGain * m_scratchVocL[i] +
-                                             drumGain * m_scratchDrumL[i] +
-                                             instGain * m_scratchInstL[i];
+                                drumGain * m_scratchDrumL[i] +
+                                bassGain * m_scratchBassL[i] +
+                                instGain * m_scratchInstL[i];
                         const double out_r = vocGain * m_scratchVocR[i] +
-                                             drumGain * m_scratchDrumR[i] +
-                                             instGain * m_scratchInstR[i];
+                                drumGain * m_scratchDrumR[i] +
+                                bassGain * m_scratchBassR[i] +
+                                instGain * m_scratchInstR[i];
                         pInOut[2 * i] = static_cast<CSAMPLE>(out_l);
                         pInOut[2 * i + 1] = static_cast<CSAMPLE>(out_r);
                     }
@@ -238,19 +278,13 @@ void StemChannelProcessor::process(CSAMPLE* pInOut, int iBufferSize, audio::Fram
                 // Pitch/tempo altered - linear interpolation across stem frames
                 const uint32_t neededFrames = static_cast<uint32_t>(std::ceil(framesProcessed)) + 2;
                 if (m_pStemTrackBuffer->isRangeReady(startFrame, neededFrames)) {
-                    if (m_scratchVocL.size() < neededFrames) {
-                        m_scratchVocL.resize(neededFrames);
-                        m_scratchVocR.resize(neededFrames);
-                        m_scratchDrumL.resize(neededFrames);
-                        m_scratchDrumR.resize(neededFrames);
-                        m_scratchInstL.resize(neededFrames);
-                        m_scratchInstR.resize(neededFrames);
-                    }
+                    ensureScratch(neededFrames);
 
                     m_pStemTrackBuffer->readFrames(
                             startFrame, neededFrames,
                             m_scratchVocL.data(), m_scratchVocR.data(),
                             m_scratchDrumL.data(), m_scratchDrumR.data(),
+                            m_scratchBassL.data(), m_scratchBassR.data(),
                             m_scratchInstL.data(), m_scratchInstR.data());
 
                     for (int i = 0; i < numFrames; ++i) {
@@ -263,11 +297,13 @@ void StemChannelProcessor::process(CSAMPLE* pInOut, int iBufferSize, audio::Fram
                         const float vr = m_scratchVocR[idx0] + frac * (m_scratchVocR[idx1] - m_scratchVocR[idx0]);
                         const float dl = m_scratchDrumL[idx0] + frac * (m_scratchDrumL[idx1] - m_scratchDrumL[idx0]);
                         const float dr = m_scratchDrumR[idx0] + frac * (m_scratchDrumR[idx1] - m_scratchDrumR[idx0]);
+                        const float bl = m_scratchBassL[idx0] + frac * (m_scratchBassL[idx1] - m_scratchBassL[idx0]);
+                        const float br = m_scratchBassR[idx0] + frac * (m_scratchBassR[idx1] - m_scratchBassR[idx0]);
                         const float il = m_scratchInstL[idx0] + frac * (m_scratchInstL[idx1] - m_scratchInstL[idx0]);
                         const float ir = m_scratchInstR[idx0] + frac * (m_scratchInstR[idx1] - m_scratchInstR[idx0]);
 
-                        const double out_l = vocGain * vl + drumGain * dl + instGain * il;
-                        const double out_r = vocGain * vr + drumGain * dr + instGain * ir;
+                        const double out_l = vocGain * vl + drumGain * dl + bassGain * bl + instGain * il;
+                        const double out_r = vocGain * vr + drumGain * dr + bassGain * br + instGain * ir;
                         pInOut[2 * i] = static_cast<CSAMPLE>(out_l);
                         pInOut[2 * i + 1] = static_cast<CSAMPLE>(out_r);
                     }
@@ -277,9 +313,9 @@ void StemChannelProcessor::process(CSAMPLE* pInOut, int iBufferSize, audio::Fram
         }
     }
 
-    // High-fidelity real-time 4th-order Linkwitz-Riley stem isolator (zero-latency, transparent sum)
+    // Zero-latency DSP fallback: 4-way Linkwitz-Riley split (unity sum).
     if (!usedMlStems) {
-        m_dspIsolator.process(pInOut, numFrames, vocGain, drumGain, instGain);
+        m_dspIsolator.process(pInOut, numFrames, vocGain, drumGain, bassGain, instGain);
     }
 }
 

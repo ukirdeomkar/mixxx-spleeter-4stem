@@ -19,6 +19,9 @@
 
               <Template src="skins:LateNight/decks/row_1_keyVinylFx.xml"/>
 
+              <!-- 4-stem controls, one section per stem, above the track title -->
+              <Template src="skins:LateNight/decks/stems_strip.xml"/>
+
               <WidgetGroup>
                 <ObjectName>DeckRows234</ObjectName>
                 <SizePolicy>me,min</SizePolicy>

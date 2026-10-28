@@ -9,7 +9,8 @@
 namespace mixxx {
 
 namespace {
-constexpr char kMagic[8] = {'M', 'I', 'X', 'S', 'T', 'E', 'M', '1'};
+// v2: four stems (vocals, drums, bass, other). v1 caches are ignored.
+constexpr char kMagic[8] = {'M', 'I', 'X', 'S', 'T', 'E', 'M', '2'};
 } // namespace
 
 QString StemCache::getCacheDir() {
@@ -67,15 +68,19 @@ bool StemCache::loadFromCache(TrackPointer pTrack, StemTrackBuffer* pBuffer) {
     std::vector<float> vocR(totalFrames);
     std::vector<float> drumL(totalFrames);
     std::vector<float> drumR(totalFrames);
-    std::vector<float> instL(totalFrames);
-    std::vector<float> instR(totalFrames);
+    std::vector<float> bassL(totalFrames);
+    std::vector<float> bassR(totalFrames);
+    std::vector<float> otherL(totalFrames);
+    std::vector<float> otherR(totalFrames);
 
     if (file.read(reinterpret_cast<char*>(vocL.data()), channelBytes) != channelBytes ||
         file.read(reinterpret_cast<char*>(vocR.data()), channelBytes) != channelBytes ||
         file.read(reinterpret_cast<char*>(drumL.data()), channelBytes) != channelBytes ||
         file.read(reinterpret_cast<char*>(drumR.data()), channelBytes) != channelBytes ||
-        file.read(reinterpret_cast<char*>(instL.data()), channelBytes) != channelBytes ||
-        file.read(reinterpret_cast<char*>(instR.data()), channelBytes) != channelBytes) {
+        file.read(reinterpret_cast<char*>(bassL.data()), channelBytes) != channelBytes ||
+        file.read(reinterpret_cast<char*>(bassR.data()), channelBytes) != channelBytes ||
+        file.read(reinterpret_cast<char*>(otherL.data()), channelBytes) != channelBytes ||
+        file.read(reinterpret_cast<char*>(otherR.data()), channelBytes) != channelBytes) {
         qDebug() << "StemCache: Incomplete stem data read from" << path;
         return false;
     }
@@ -83,7 +88,8 @@ bool StemCache::loadFromCache(TrackPointer pTrack, StemTrackBuffer* pBuffer) {
     pBuffer->writeChunk(0, totalFrames,
                         vocL.data(), vocR.data(),
                         drumL.data(), drumR.data(),
-                        instL.data(), instR.data());
+                        bassL.data(), bassR.data(),
+                        otherL.data(), otherR.data());
 
     qDebug() << "StemCache: Successfully loaded real AI stems from cache for" << pTrack->getTitle()
              << "(" << totalFrames << "frames)";
@@ -117,20 +123,25 @@ bool StemCache::saveToCache(TrackPointer pTrack, const StemTrackBuffer* pBuffer)
     std::vector<float> vocR(totalFrames);
     std::vector<float> drumL(totalFrames);
     std::vector<float> drumR(totalFrames);
-    std::vector<float> instL(totalFrames);
-    std::vector<float> instR(totalFrames);
+    std::vector<float> bassL(totalFrames);
+    std::vector<float> bassR(totalFrames);
+    std::vector<float> otherL(totalFrames);
+    std::vector<float> otherR(totalFrames);
 
     pBuffer->readFrames(0, totalFrames,
                         vocL.data(), vocR.data(),
                         drumL.data(), drumR.data(),
-                        instL.data(), instR.data());
+                        bassL.data(), bassR.data(),
+                        otherL.data(), otherR.data());
 
     if (file.write(reinterpret_cast<const char*>(vocL.data()), channelBytes) != channelBytes ||
         file.write(reinterpret_cast<const char*>(vocR.data()), channelBytes) != channelBytes ||
         file.write(reinterpret_cast<const char*>(drumL.data()), channelBytes) != channelBytes ||
         file.write(reinterpret_cast<const char*>(drumR.data()), channelBytes) != channelBytes ||
-        file.write(reinterpret_cast<const char*>(instL.data()), channelBytes) != channelBytes ||
-        file.write(reinterpret_cast<const char*>(instR.data()), channelBytes) != channelBytes) {
+        file.write(reinterpret_cast<const char*>(bassL.data()), channelBytes) != channelBytes ||
+        file.write(reinterpret_cast<const char*>(bassR.data()), channelBytes) != channelBytes ||
+        file.write(reinterpret_cast<const char*>(otherL.data()), channelBytes) != channelBytes ||
+        file.write(reinterpret_cast<const char*>(otherR.data()), channelBytes) != channelBytes) {
         qDebug() << "StemCache: Write error saving stems cache to" << path;
         return false;
     }
