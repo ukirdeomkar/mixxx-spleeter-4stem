@@ -4293,12 +4293,13 @@ endif()
 # which also lets dpkg-shlibdeps resolve it as an in-package library instead of
 # failing with "cannot find library libonnxruntime.so.1".
 if(UNIX AND NOT APPLE AND NOT ANDROID AND ONNXRUNTIME_LIBRARY)
+  get_filename_component(_ort_lib_dir "${ONNXRUNTIME_LIBRARY}" DIRECTORY)
   install(FILES "${ONNXRUNTIME_LIBRARY}"
     DESTINATION "lib/mixxx"
     RENAME "libonnxruntime.so.1")
   set_target_properties(mixxx PROPERTIES
     INSTALL_RPATH "$ORIGIN/../lib/mixxx")
-  # The shlibdeps scanner needs the library to be findable while packaging.
-  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS "${ONNXRUNTIME_LIBRARY}")
+  # dpkg-shlibdeps -l takes a DIRECTORY of private libraries, not a file.
+  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS "${_ort_lib_dir}")
   message(STATUS "Bundling ONNX Runtime into lib/mixxx: ${ONNXRUNTIME_LIBRARY}")
 endif()
