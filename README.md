@@ -14,6 +14,54 @@ of seconds after loading a track instead of waiting for the whole file.
 
 ---
 
+## Download
+
+| Platform | Build | Status |
+|---|---|---|
+| **macOS** (Intel, 10.15+) | [Mixxx-Stems-2.5.6-macOS-x86_64.dmg](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.1/Mixxx-Stems-2.5.6-macOS-x86_64.dmg) | tested |
+| **Windows 10/11** (x64) | [Mixxx-Stems-2.5.6-Windows-x64.zip](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.1/Mixxx-Stems-2.5.6-Windows-x64.zip) | built by CI, untested |
+
+All builds live under [Releases](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases).
+The four Spleeter models are bundled in both builds - nothing to configure.
+
+### macOS installation
+
+1. Open the `.dmg` and drag **Mixxx** into **Applications**.
+2. First launch: **right-click the app -> Open** (it is ad-hoc signed, not notarised).
+   If macOS refuses, use *System Settings -> Privacy & Security -> Open Anyway*,
+   or clear the quarantine flag:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Mixxx.app
+   ```
+
+3. Launch. Models ship inside `Mixxx.app/Contents/Resources/models`, so the
+   project folder is not needed.
+
+### Windows installation
+
+1. Download the `.zip` and **right-click -> Extract All** (do not run anything
+   from inside the archive - Windows needs the DLLs and `models/` folder
+   alongside `mixxx.exe`).
+2. Open the extracted folder and run **`mixxx.exe`**.
+3. If SmartScreen appears: **More info -> Run anyway** (the build is unsigned).
+4. Keep the folder contents together: `mixxx.exe`, `onnxruntime.dll`,
+   `fdk-aac.dll`, `models/`, `controllers/`, `skins/`, `platforms/`, ...
+
+### First run (both platforms)
+
+1. **Sound Hardware**: pick your controller/output device (e.g. `DDJ-FLX4`) as
+   output, and its inputs for the headphone cue.
+2. **Controllers**: the `Pioneer DDJ-FLX4` mapping should be detected; enable it
+   and load the built-in `Pioneer DDJ-FLX4` mapping if nothing is selected.
+3. Load a track - separation starts immediately. You can press play after a
+   couple of seconds; the first region switches from the DSP split to real stems
+   as soon as it is ready.
+4. **FLX4 pads**: press the **SAMPLER** pad-mode button. Pad 1 vocals, 2
+   instruments, 3 bass, 4 drums; `SHIFT`+pad solos; pads 5-8 are free.
+
+---
+
 ## Shoutouts
 
 This project is standing on a lot of other people's work. Go star these:
