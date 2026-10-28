@@ -317,6 +317,17 @@ void StemChannelProcessor::process(CSAMPLE* pInOut, int iBufferSize, audio::Fram
     if (!usedMlStems) {
         m_dspIsolator.process(pInOut, numFrames, vocGain, drumGain, bassGain, instGain);
     }
+
+    // Log only when the deck switches between real AI stems and the DSP
+    // fallback: repeated flapping means separation is not staying ahead.
+    if (usedMlStems != m_lastUsedMlStems) {
+        m_lastUsedMlStems = usedMlStems;
+        qDebug() << "StemChannelProcessor:" << m_group
+                 << (usedMlStems ? "AI stems ON" : "DSP fallback ON")
+                 << "playPos" << playPos.value()
+                 << "ready" << m_pStemTrackBuffer->framesReady()
+                 << "total" << m_pStemTrackBuffer->totalFrames();
+    }
 }
 
 } // namespace mixxx

@@ -65,6 +65,9 @@ class StemChannelProcessor : public QObject {
     std::shared_ptr<StemTrackBuffer> m_pStemTrackBuffer;
     std::unique_ptr<StemWorkerThread> m_pWorkerThread;
 
+    // Last output source, used to log AI <-> DSP transitions
+    bool m_lastUsedMlStems{false};
+
     // Scratch buffers for ML stem mixing
     std::vector<float> m_scratchVocL;
     std::vector<float> m_scratchVocR;
