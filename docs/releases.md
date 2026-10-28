@@ -8,18 +8,19 @@ Status:
 |---|---|---|
 | Windows zip | `.github/workflows/build-stems.yml` (`windows` job) | same workflow (`publish` job) |
 | Linux deb | `.github/workflows/build-stems.yml` (`linux` job) | same workflow (`publish` job) |
-| macOS DMG | locally (see below) | manual upload |
+| macOS x86_64 DMG | `.github/workflows/build-stems.yml` (`macos_intel` job) | same workflow (`publish` job) |
+| macOS arm64 DMG | `.github/workflows/build-stems.yml` (`macos_arm64` job, cross-compiled) | same workflow (`publish` job) |
 
-`build-stems.yml` is `workflow_dispatch` only and builds both platforms in
-parallel, then publishes them in **one** job. Give `release_tag` a tag and it
+`build-stems.yml` is `workflow_dispatch` only. It builds Windows, Linux and
+both macOS architectures in parallel, then publishes them in **one** job. Give `release_tag` a tag and it
 creates the release if the tag is new (`gh release create --prerelease`),
 attaches every produced asset with `--clobber`, and then runs
 `sync-downloads.yml` once to regenerate the README download table between the
 `<!-- downloads:start -->` / `<!-- downloads:end -->` markers.
 
 Leave `release_tag` empty for a build-only run (artifacts only). The
-`build_windows` / `build_linux` inputs let you skip one platform; the publish
-job still runs for whichever platform succeeded.
+`build_windows` / `build_linux` / `build_macos` inputs let you skip a platform;
+the publish job still runs for whichever platform succeeded.
 
 Security shape: both build jobs run with `permissions: contents: read`; only
 the small `publish` job gets `contents: write`, and it does nothing but
@@ -27,13 +28,26 @@ download the artifacts and call `gh release upload`. It runs in the `release`
 environment, so requiring a reviewer there gates all publishing behind a click
 (Settings → Environments → release).
 
-## macOS (Intel) — DMG
+## macOS — DMGs
 
-This is the only platform still built and uploaded by hand: Qt 6.5's `moc`
-fails to parse `<concepts>` with SDKs newer than 12.1, so the runner image
-cannot build it yet.
+CI builds both architectures on `macos-15-intel`:
 
-Requires the build from `README.md` (`-DMACOS_BUNDLE=ON`, macOS 12.1 SDK).
+- `macos_intel` uses `tools/macos_release_buildenv.sh` (triplet
+  `x64-osx-min1100-release`) and produces a `x86_64` bundle.
+- `macos_arm64` uses `tools/macos_arm64-cross-release_buildenv.sh` (triplet
+  `arm64-osx-min1100-release`). CMake derives `CMAKE_OSX_ARCHITECTURES=arm64`
+  from the triplet; the runner cross-compiles.
+
+Both jobs stage the four models in `./models` before configuring, so the
+install rule puts them in `Mixxx.app/Contents/Resources/models`. Each DMG is
+mounted and checked (`lipo -archs` must be `x86_64` or `arm64`, models present)
+before it is uploaded.
+
+Builds are **portable** (`OPTIMIZE=portable`): never ship the `native` setting
+from the README, which bakes in AVX2 from the build machine and crashes on
+older Intel Macs and on Rosetta versions without AVX2.
+
+### Local fallback (if CI has no macOS runner)
 
 ```bash
 cd ~/mixxx-stems
@@ -41,7 +55,7 @@ cd ~/mixxx-stems
 # 1. Bundle install into dist/ (fixup_bundle copies non-system dylibs and
 #    rewrites @rpath to @executable_path/../Frameworks, then ad-hoc signs)
 mkdir -p models   # the four spleeter_*.onnx + NOTICE.txt
-cmake -S . -B build -DMACOS_BUNDLE=ON
+cmake -S . -B build -DMACOS_BUNDLE=ON -DOPTIMIZE=portable
 cmake --build build --parallel 2
 cmake --install build --prefix "$PWD/dist"
 
@@ -146,7 +160,7 @@ Actions -> "Sync download links" -> tag v2.5.6-stems.1
 
 ## TODO
 
-- Get macOS into CI. Upstream Mixxx builds macOS on `macos-13`/`macos-15-intel`
-  with its release buildenv; worth trying before pinning the 12.1 SDK.
 - Once every platform comes from one tag, point the README links at
   `/releases/latest` instead of a fixed tag.
+- Notarisation would remove the right-click-to-open step; it needs an Apple
+  Developer ID and `notarytool` credentials in the `release` environment.

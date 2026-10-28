@@ -21,6 +21,10 @@ on:
         description: "Build the Linux .deb"
         type: boolean
         default: true
+      build_macos:
+        description: "Build macOS DMGs (Intel x86_64 + Apple Silicon arm64)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -216,18 +220,191 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+
+  # ---------------------------------------------------------------------------
+  # macOS Intel (runs on your 2017 Intel Mac and any x86_64 Mac)
+  # ---------------------------------------------------------------------------
+  macos_intel:
+    if: ${{ inputs.build_macos }}
+    runs-on: macos-15-intel
+    timeout-minutes: 180
+    env:
+      BUILDENV_BASEPATH: /Users/runner/buildenv
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Mixxx's prebuilt release dependency set (Qt 6.5, vcpkg, ORT...). The
+      # script exports MIXXX_VCPKG_ROOT / CMAKE_GENERATOR / the triplet, which
+      # CMakeLists.txt consumes to set up the vcpkg toolchain.
+      - name: Set up Mixxx release build environment
+        run: tools/macos_release_buildenv.sh setup
+
+      - name: Fetch Spleeter models
+        run: |
+          mkdir -p models
+          base="https://huggingface.co/Best-Practice/spleeter-4stems-onnx/resolve/main"
+          for stem in vocals drums bass other; do
+            echo "downloading $stem.onnx"
+            curl -fL --retry 3 "$base/$stem.onnx" -o "models/spleeter_$stem.onnx"
+          done
+          ls -lh models/
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMACOS_BUNDLE=ON \
+            -DQT6=ON \
+            -DQML=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_BENCH=OFF \
+            -DWARNINGS_FATAL=OFF \
+            -DOPTIMIZE=portable \
+            -DBULK=ON \
+            -DFFMPEG=OFF \
+            -DMODPLUG=ON \
+            -DWAVPACK=ON \
+            -DVCPKG_TARGET_TRIPLET=x64-osx-min1100-release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Package DMG
+        run: |
+          cd build
+          cpack -G DragNDrop
+          ls -lh ./*.dmg
+
+      - name: Verify the bundle inside the DMG
+        run: |
+          dmg=$(ls build/*.dmg | head -1)
+          mkdir -p /tmp/dmgcheck
+          hdiutil attach "$dmg" -nobrowse -mountpoint /tmp/dmgcheck
+          archs=$(lipo -archs /tmp/dmgcheck/Mixxx.app/Contents/MacOS/mixxx)
+          echo "architectures: $archs"
+          test "$archs" = "x86_64"
+          test -f /tmp/dmgcheck/Mixxx.app/Contents/Resources/models/spleeter_vocals.onnx
+          hdiutil detach /tmp/dmgcheck
+
+      - name: Name the DMG for the release
+        env:
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          version=$(printf '%s' "$TAG" | sed -E 's/^v([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          if [ -z "$version" ] || [ "$version" = "$TAG" ]; then version="2.5.6"; fi
+          dmg=$(ls build/*.dmg | head -1)
+          mv "$dmg" "Mixxx-Stems-${version}-macOS-x86_64.dmg"
+          ls -lh Mixxx-Stems-*.dmg
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixxx-stems-macos-x86_64
+          path: Mixxx-Stems-*-macOS-x86_64.dmg
+          retention-days: 14
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # macOS Apple Silicon (arm64, cross-compiled on the Intel runner)
+  # ---------------------------------------------------------------------------
+  macos_arm64:
+    if: ${{ inputs.build_macos }}
+    runs-on: macos-15-intel
+    timeout-minutes: 180
+    env:
+      BUILDENV_BASEPATH: /Users/runner/buildenv
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Mixxx arm64 release build environment
+        run: tools/macos_arm64-cross-release_buildenv.sh setup
+
+      - name: Fetch Spleeter models
+        run: |
+          mkdir -p models
+          base="https://huggingface.co/Best-Practice/spleeter-4stems-onnx/resolve/main"
+          for stem in vocals drums bass other; do
+            echo "downloading $stem.onnx"
+            curl -fL --retry 3 "$base/$stem.onnx" -o "models/spleeter_$stem.onnx"
+          done
+          ls -lh models/
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMACOS_BUNDLE=ON \
+            -DQT6=ON \
+            -DQML=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_BENCH=OFF \
+            -DWARNINGS_FATAL=OFF \
+            -DOPTIMIZE=portable \
+            -DBULK=ON \
+            -DFFMPEG=OFF \
+            -DMODPLUG=ON \
+            -DWAVPACK=ON \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx-min1100-release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Package DMG
+        run: |
+          cd build
+          cpack -G DragNDrop
+          ls -lh ./*.dmg
+
+      - name: Verify the bundle inside the DMG
+        run: |
+          dmg=$(ls build/*.dmg | head -1)
+          mkdir -p /tmp/dmgcheck
+          hdiutil attach "$dmg" -nobrowse -mountpoint /tmp/dmgcheck
+          archs=$(lipo -archs /tmp/dmgcheck/Mixxx.app/Contents/MacOS/mixxx)
+          echo "architectures: $archs"
+          test "$archs" = "arm64"
+          test -f /tmp/dmgcheck/Mixxx.app/Contents/Resources/models/spleeter_vocals.onnx
+          hdiutil detach /tmp/dmgcheck
+
+      - name: Name the DMG for the release
+        env:
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          version=$(printf '%s' "$TAG" | sed -E 's/^v([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          if [ -z "$version" ] || [ "$version" = "$TAG" ]; then version="2.5.6"; fi
+          dmg=$(ls build/*.dmg | head -1)
+          mv "$dmg" "Mixxx-Stems-${version}-macOS-arm64.dmg"
+          ls -lh Mixxx-Stems-*.dmg
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixxx-stems-macos-arm64
+          path: Mixxx-Stems-*-macOS-arm64.dmg
+          retention-days: 14
+          if-no-files-found: error
+
   # ---------------------------------------------------------------------------
   # Publish once, for whatever was built successfully
   # ---------------------------------------------------------------------------
   publish:
-    needs: [windows, linux]
-    # `!cancelled()` keeps this running when one platform was skipped/failed,
-    # as long as the other produced an artifact.
-    if: ${{ !cancelled() && inputs.release_tag != '' && (needs.windows.result == 'success' || needs.linux.result == 'success') }}
+    needs: [windows, linux, macos_intel, macos_arm64]
+    # `!cancelled()` keeps this running when a platform failed, as long as at
+    # least one produced an artifact.
+    if: ${{ !cancelled() && inputs.release_tag != '' && (needs.windows.result == 'success' || needs.linux.result == 'success' || needs.macos_intel.result == 'success' || needs.macos_arm64.result == 'success') }}
     runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: write
+    env:
+      # No checkout in this job, so gh cannot infer the repository.
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Download Windows zip
         if: ${{ needs.windows.result == 'success' }}
@@ -241,6 +418,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mixxx-stems-linux-deb
+          path: dist
+
+      - name: Download macOS Intel DMG
+        if: ${{ needs.macos_intel.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: mixxx-stems-macos-x86_64
+          path: dist
+
+      - name: Download macOS arm64 DMG
+        if: ${{ needs.macos_arm64.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: mixxx-stems-macos-arm64
           path: dist
 
       - name: Normalise asset names

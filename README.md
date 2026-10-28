@@ -24,12 +24,15 @@ of seconds after loading a track instead of waiting for the whole file.
 <!-- downloads:end -->
 
 All builds live under [Releases](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases).
-The four Spleeter models are bundled in both builds - nothing to configure.
+The four Spleeter models are bundled in every build - nothing to configure.
 
 ### macOS installation
 
-1. Open the `.dmg` and drag **Mixxx** into **Applications**.
-2. First launch: **right-click the app -> Open** (it is ad-hoc signed, not notarised).
+1. Pick the build for your Mac - **Apple Silicon** (`arm64`) for M1/M2/M3/M4,
+   **Intel** (`x86_64`) for older Macs, which also runs on Apple Silicon under
+   Rosetta 2. Both require macOS 11 or newer.
+2. Open the `.dmg` and drag **Mixxx** into **Applications**.
+3. First launch: **right-click the app -> Open** (it is ad-hoc signed, not notarised).
    If macOS refuses, use *System Settings -> Privacy & Security -> Open Anyway*,
    or clear the quarantine flag:
 
@@ -37,7 +40,7 @@ The four Spleeter models are bundled in both builds - nothing to configure.
    xattr -dr com.apple.quarantine /Applications/Mixxx.app
    ```
 
-3. Launch. Models ship inside `Mixxx.app/Contents/Resources/models`, so the
+4. Launch. Models ship inside `Mixxx.app/Contents/Resources/models`, so the
    project folder is not needed.
 
 ### Windows installation
@@ -166,7 +169,9 @@ Notes that cost real time to discover:
   (`namespace ranges::inline __cpo`).
 - `-DQML=OFF` is fine — the LateNight skin is legacy XML.
 - `-DBUILD_BENCH=OFF`, otherwise CMake demands unit tests.
-- `-DOPTIMIZE=native` matters: the i5-5350U is Broadwell.
+- `-DOPTIMIZE=native` matters for local use: the i5-5350U is Broadwell. Do
+  **not** publish a `native` build - it bakes in AVX2 and crashes on older
+  Intel Macs and on Rosetta without AVX2. Release builds use `portable`.
 
 Set `MIXXX_DEBUG_SPLEETER_STEMS=1` to log per-block residual and timing; the four
 masks sum to one, so `sum(stems) - mix` must be very negative (~−135 dB measured).
