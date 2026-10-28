@@ -281,13 +281,26 @@ jobs:
       - name: Verify the bundle inside the DMG
         run: |
           dmg=$(ls build/*.dmg | head -1)
+          # The DMG carries Mixxx's LGPL license agreement (CPACK_RESOURCE_FILE_LICENSE).
+          # In a headless runner `hdiutil attach` otherwise prints "attach canceled",
+          # so either skip the agreement or fall back to the bundle CPack staged.
+          defaults write com.apple.frameworks.diskimages skip-license -bool YES || true
           mkdir -p /tmp/dmgcheck
-          hdiutil attach "$dmg" -nobrowse -mountpoint /tmp/dmgcheck
-          archs=$(lipo -archs /tmp/dmgcheck/Mixxx.app/Contents/MacOS/mixxx)
+          if hdiutil attach "$dmg" -nobrowse -readonly -mountpoint /tmp/dmgcheck; then
+            app=/tmp/dmgcheck/Mixxx.app
+            mounted=1
+          else
+            echo "::warning::could not mount the DMG; verifying the staged bundle"
+            app=$(find build/_CPack_Packages -maxdepth 6 -iname "Mixxx.app" -type d | head -1)
+            mounted=0
+          fi
+          test -n "$app"
+          archs=$(lipo -archs "$app/Contents/MacOS/mixxx")
           echo "architectures: $archs"
           test "$archs" = "x86_64"
-          test -f /tmp/dmgcheck/Mixxx.app/Contents/Resources/models/spleeter_vocals.onnx
-          hdiutil detach /tmp/dmgcheck
+          test -f "$app/Contents/Resources/models/spleeter_vocals.onnx"
+          hdiutil verify "$dmg"
+          if [ "$mounted" = 1 ]; then hdiutil detach /tmp/dmgcheck; fi
 
       - name: Name the DMG for the release
         env:
@@ -364,13 +377,26 @@ jobs:
       - name: Verify the bundle inside the DMG
         run: |
           dmg=$(ls build/*.dmg | head -1)
+          # The DMG carries Mixxx's LGPL license agreement (CPACK_RESOURCE_FILE_LICENSE).
+          # In a headless runner `hdiutil attach` otherwise prints "attach canceled",
+          # so either skip the agreement or fall back to the bundle CPack staged.
+          defaults write com.apple.frameworks.diskimages skip-license -bool YES || true
           mkdir -p /tmp/dmgcheck
-          hdiutil attach "$dmg" -nobrowse -mountpoint /tmp/dmgcheck
-          archs=$(lipo -archs /tmp/dmgcheck/Mixxx.app/Contents/MacOS/mixxx)
+          if hdiutil attach "$dmg" -nobrowse -readonly -mountpoint /tmp/dmgcheck; then
+            app=/tmp/dmgcheck/Mixxx.app
+            mounted=1
+          else
+            echo "::warning::could not mount the DMG; verifying the staged bundle"
+            app=$(find build/_CPack_Packages -maxdepth 6 -iname "Mixxx.app" -type d | head -1)
+            mounted=0
+          fi
+          test -n "$app"
+          archs=$(lipo -archs "$app/Contents/MacOS/mixxx")
           echo "architectures: $archs"
           test "$archs" = "arm64"
-          test -f /tmp/dmgcheck/Mixxx.app/Contents/Resources/models/spleeter_vocals.onnx
-          hdiutil detach /tmp/dmgcheck
+          test -f "$app/Contents/Resources/models/spleeter_vocals.onnx"
+          hdiutil verify "$dmg"
+          if [ "$mounted" = 1 ]; then hdiutil detach /tmp/dmgcheck; fi
 
       - name: Name the DMG for the release
         env:
