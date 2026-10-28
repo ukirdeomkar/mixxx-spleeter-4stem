@@ -122,6 +122,22 @@ Consecutive blocks therefore tile the track with no gaps and no double
 counting, and every output sample is normalised only by the frames that
 actually contributed to it. Blocks overlap by 3 frames (~0.6 % extra inference).
 
+## Measured on the target machine (MacBookAir7,2, i5-5350U, 8 GB)
+
+Per block (11.82 s of audio), after a 3.8 s first block that includes model warm-up:
+
+| block | ms |
+|---|---|
+| 0 (warm-up) | 3830 |
+| 1-4 | 2683 / 2623 / 3057 / 3236 |
+| 5-15 (steady) | 2027 - 2328 |
+
+=> **~5.4x real-time** in steady state; a 2:59 track is fully separated in ~37 s
+of CPU work. Playback can start ~4 s after the first block lands.
+
+The worker runs at `NormalPriority`: at `LowPriority` the GUI starved it and
+blocks took 2.3-6.3 s instead (2-3x real-time).
+
 ## Validation
 
 - `spleeterstft` reconstruction with uniform 0.25 masks over a 1.5 M sample

@@ -38,7 +38,9 @@ void StemWorkerThread::loadTrack(TrackPointer pTrack) {
 
     if (!isRunning()) {
         m_stopRequested.storeRelaxed(0);
-        start(QThread::LowPriority);
+        // Normal priority: separation has to stay ahead of playback. Low
+        // priority loses too much CPU to the GUI thread on 2-core machines.
+        start(QThread::NormalPriority);
     }
 }
 

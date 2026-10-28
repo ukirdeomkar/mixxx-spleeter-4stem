@@ -15,6 +15,7 @@
 #include <QFileInfo>
 #include <QStandardPaths>
 #include <QDebug>
+#include <QElapsedTimer>
 
 #include <algorithm>
 #include <cmath>
@@ -248,6 +249,9 @@ bool SpleeterEngine::separateBlock(const float* in_l,
         return false;
     }
 
+    QElapsedTimer blockTimer;
+    blockTimer.start();
+
     const int frames = spleeter::kFramesPerSplit;
     const int bins = spleeter::kBins;
     const int modelBins = spleeter::kModelBins;
@@ -389,7 +393,9 @@ bool SpleeterEngine::separateBlock(const float* in_l,
             const double residualDb = 10.0 * std::log10(
                     (errEnergy + 1e-30) / (refEnergy + 1e-30));
             qDebug() << "SpleeterEngine: block" << blockIndex
-                     << "sum(stems) - mix =" << residualDb << "dB";
+                     << "sum(stems) - mix =" << residualDb << "dB"
+                     << "|" << blockTimer.elapsed() << "ms for"
+                     << (static_cast<double>(sampleCount) / kSampleRate) << "s audio";
         }
 
         return true;
