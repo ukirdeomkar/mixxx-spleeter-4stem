@@ -42,12 +42,32 @@ jobs:
         shell: cmd
         run: tools\windows_buildenv.bat setup
 
+      # Mixxx's CMake falls back to downloading ONNX Runtime itself, which is
+      # broken on Windows with CMake 3.21 ("At least one entry of URL is a
+      # path"). Fetch it here and hand CMake explicit paths instead.
+      - name: Fetch ONNX Runtime
+        shell: pwsh
+        run: |
+          $ver = "1.19.2"
+          $name = "onnxruntime-win-x64-$ver"
+          $zip = "$env:RUNNER_TEMP\$name.zip"
+          Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$ver/$name.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\ort" -Force
+          $root = "$env:RUNNER_TEMP\ort\$name"
+          if (-not (Test-Path "$root\include\onnxruntime_cxx_api.h")) { throw "ORT headers missing" }
+          if (-not (Test-Path "$root\lib\onnxruntime.lib")) { throw "ORT import library missing" }
+          "ORT_ROOT=$root" >> $env:GITHUB_ENV
+          Write-Host "ONNX Runtime staged at $root"
+
       - name: Configure
         shell: pwsh
         run: |
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=RelWithDebInfo `
             -DCMAKE_PREFIX_PATH="$env:CMAKE_PREFIX_PATH" `
+            -DONNXRUNTIME_INCLUDE_DIR="$env:ORT_ROOT\include" `
+            -DONNXRUNTIME_LIBRARY="$env:ORT_ROOT\lib\onnxruntime.lib" `
+            -DMIXXX_AUTO_DOWNLOAD_ONNX=OFF `
             -DQT6=ON `
             -DQML=OFF `
             -DBUILD_TESTING=OFF `
@@ -69,13 +89,12 @@ jobs:
 
           # ONNX Runtime is linked via rpath/import lib; the DLL is not part of
           # Mixxx's install rules, so copy it next to the executable.
-          $ort = Get-ChildItem build\_deps\onnxruntime_prebuilt-src\lib\*.dll -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-          if ($ort) {
-            Copy-Item $ort.FullName stage\
-            Write-Host "bundled $($ort.Name)"
+          $ortDll = "$env:ORT_ROOT\lib\onnxruntime.dll"
+          if (Test-Path $ortDll) {
+            Copy-Item $ortDll stage\
+            Write-Host "bundled onnxruntime.dll"
           } else {
-            Write-Warning "onnxruntime.dll not found - the app will not start"
+            throw "onnxruntime.dll not found in $env:ORT_ROOT"
           }
 
           # fdk-aac is loaded at runtime with QLibrary, not linked.
