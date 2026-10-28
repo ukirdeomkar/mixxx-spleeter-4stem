@@ -207,7 +207,9 @@ and the last button switches between `DSP` (instant) and `AI` (Spleeter).
   currently outputting.
 - The FLX4 mapping covers decks 1 and 2 (the two physical deck sides).
 - Separation quality is Spleeter's: well below Demucs, but it runs on this
-  hardware and Demucs does not.
+  hardware and Demucs does not. An optional Demucs ("Quality") engine is
+  designed but not implemented — see [`docs/todo-hq-demucs.md`](docs/todo-hq-demucs.md)
+  for the measurements, packaging cost and gating rules.
 
 ## License
 
