@@ -4,9 +4,14 @@ name: Linux build (4-stem)
 # four Spleeter models in /usr/share/mixxx/models.
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+    inputs:
+      release_tag:
+        description: "Existing release tag to attach the .deb to (empty = build only)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
 
 concurrency:
   group: linux-${{ github.ref }}
@@ -74,10 +79,42 @@ jobs:
           cpack -G DEB
           ls -lh ./*.deb
 
-      - name: Upload .deb
+      - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
           name: mixxx-stems-linux-deb
           path: build/*.deb
           retention-days: 14
           if-no-files-found: error
+
+  # Write access lives only here, never in the job that runs the compiler.
+  publish:
+    needs: build
+    if: ${{ inputs.release_tag != '' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Download built .deb
+        uses: actions/download-artifact@v4
+        with:
+          name: mixxx-stems-linux-deb
+          path: deb
+
+      - name: Attach .deb to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for deb in deb/*.deb; do
+            gh release upload "${{ inputs.release_tag }}" "$deb" --clobber
+          done
+
+  sync-downloads:
+    needs: publish
+    if: ${{ inputs.release_tag != '' }}
+    uses: ./.github/workflows/sync-downloads.yml
+    with:
+      tag: ${{ inputs.release_tag }}
+    permissions:
+      contents: write

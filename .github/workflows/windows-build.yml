@@ -5,13 +5,12 @@ name: Windows build (4-stem)
 on:
   workflow_dispatch:
     inputs:
-      upload_artifact:
-        description: "Upload the portable zip as a workflow artifact"
-        type: boolean
-        default: true
-  push:
-    tags:
-      - "v*"
+      release_tag:
+        description: "Existing release tag to attach the zip to (empty = build only)"
+        type: string
+        default: ""
+permissions:
+  contents: read
 
 concurrency:
   group: windows-${{ github.ref }}
@@ -118,11 +117,40 @@ jobs:
           Compress-Archive -Path stage\* -DestinationPath mixxx-stems-windows-x64.zip -Force
           Get-Item mixxx-stems-windows-x64.zip | Format-List Name, Length
 
-      - name: Upload portable zip
-        if: ${{ github.event_name == 'push' || inputs.upload_artifact }}
+      - name: Upload portable zip artifact
         uses: actions/upload-artifact@v4
         with:
           name: mixxx-stems-windows-x64
           path: mixxx-stems-windows-x64.zip
           retention-days: 14
           if-no-files-found: error
+
+  # Write access lives only here, never in the job that runs the compiler and
+  # third-party actions. Requires the "release" environment to be approved if
+  # you add protection rules to it (Settings -> Environments).
+  publish:
+    needs: build
+    if: ${{ inputs.release_tag != '' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Download built zip
+        uses: actions/download-artifact@v4
+        with:
+          name: mixxx-stems-windows-x64
+
+      - name: Attach zip to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ inputs.release_tag }}" mixxx-stems-windows-x64.zip --clobber
+
+  sync-downloads:
+    needs: publish
+    if: ${{ inputs.release_tag != '' }}
+    uses: ./.github/workflows/sync-downloads.yml
+    with:
+      tag: ${{ inputs.release_tag }}
+    permissions:
+      contents: write

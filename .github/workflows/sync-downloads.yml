@@ -10,6 +10,12 @@ on:
         description: "Release tag whose assets should be listed"
         required: true
         default: "v2.5.6-stems.1"
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag whose assets should be listed"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,8 +24,10 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out repository (main, so the commit can be pushed)
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Rewrite the download block
         env:
