@@ -1,0 +1,91 @@
+name: Sync download links
+
+# Regenerates ONLY the block between <!-- downloads:start --> and
+# <!-- downloads:end --> in README.md from the assets attached to a release,
+# then commits it. The rest of the README is never touched.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag whose assets should be listed"
+        required: true
+        default: "v2.5.6-stems.1"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Rewrite the download block
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+
+          tag = os.environ["TAG"]
+          repo = os.environ["REPO"]
+          token = os.environ["GH_TOKEN"]
+
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/releases/tags/{tag}",
+              headers={"Authorization": f"token {token}",
+                       "Accept": "application/vnd.github+json"})
+          release = json.load(urllib.request.urlopen(req))
+
+          platforms = [
+              ("macOS", ".dmg", "macOS (Intel, 10.15+)", "tested"),
+              ("Windows", ".zip", "Windows 10/11 (x64)", "built by CI, untested"),
+              ("Linux", ".deb", "Linux (Ubuntu 22.04+)", "built by CI, untested"),
+          ]
+
+          rows = []
+          for label, ext, name, status in platforms:
+              for asset in release.get("assets", []):
+                  if asset["name"].lower().endswith(ext) and label.lower() in asset["name"].lower():
+                      url = asset["browser_download_url"]
+                      size = round(asset["size"] / 1048576, 1)
+                      rows.append(f"| **{name}** | [{asset['name']}]({url}) ({size} MB) | {status} |")
+                      break
+
+          if not rows:
+              raise SystemExit(f"no assets matched on release {tag}")
+
+          block = "| Platform | Build | Status |\n|---|---|---|\n" + "\n".join(rows)
+
+          path = "README.md"
+          with open(path) as f:
+              text = f.read()
+
+          pattern = re.compile(r"(<!-- downloads:start -->\n).*?(\n<!-- downloads:end -->)", re.S)
+          if not pattern.search(text):
+              raise SystemExit("download markers not found in README.md")
+
+          new_text = pattern.sub(lambda m: m.group(1) + block + m.group(2), text, count=1)
+          if new_text == text:
+              print("download block already up to date")
+          else:
+              with open(path, "w") as f:
+                  f.write(new_text)
+              print("download block updated:")
+              print(block)
+          PY
+
+      - name: Commit if the block changed
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "no changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: sync download table for ${{ inputs.tag }}"
+          git push origin HEAD:main

@@ -76,6 +76,7 @@ res/qrc_mixxx.cc
 # AI stem separation models
 models/*.onnx
 !models/README.md
+!models/NOTICE.txt
 
 # local dev
 build/

@@ -1,0 +1,16 @@
+Spleeter 4-stem models
+======================
+
+spleeter_{vocals,drums,bass,other}.onnx
+
+Model architecture and weights: Deezer Spleeter
+  https://github.com/deezer/spleeter
+  MIT licence (per the Spleeter authors' JOSS paper, doi:10.21105/joss.02154)
+
+ONNX export: Best-Practice/spleeter-4stems-onnx
+  https://huggingface.co/Best-Practice/spleeter-4stems-onnx
+  Apache-2.0
+
+The export derives from sherpa-onnx's PyTorch port of Spleeter's U-Net
+(Apache-2.0), with the activation functions parameterised so that the 4stems
+configuration uses ELU instead of the 2stems LeakyReLU/ReLU defaults.

@@ -16,10 +16,12 @@ of seconds after loading a track instead of waiting for the whole file.
 
 ## Download
 
+<!-- downloads:start -->
 | Platform | Build | Status |
 |---|---|---|
 | **macOS** (Intel, 10.15+) | [Mixxx-Stems-2.5.6-macOS-x86_64.dmg](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.1/Mixxx-Stems-2.5.6-macOS-x86_64.dmg) | tested |
 | **Windows 10/11** (x64) | [Mixxx-Stems-2.5.6-Windows-x64.zip](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.1/Mixxx-Stems-2.5.6-Windows-x64.zip) | built by CI, untested |
+<!-- downloads:end -->
 
 All builds live under [Releases](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases).
 The four Spleeter models are bundled in both builds - nothing to configure.
@@ -48,7 +50,22 @@ The four Spleeter models are bundled in both builds - nothing to configure.
 4. Keep the folder contents together: `mixxx.exe`, `onnxruntime.dll`,
    `fdk-aac.dll`, `models/`, `controllers/`, `skins/`, `platforms/`, ...
 
-### First run (both platforms)
+### Linux installation
+
+1. Install the `.deb` (Ubuntu 22.04+ / Debian 12+):
+
+   ```bash
+   sudo apt install ./Mixxx-Stems-*-Linux.deb
+   ```
+
+2. The models are installed to `/usr/share/mixxx/models`, so the app finds them
+   automatically. Launch `mixxx` from your application menu or a terminal.
+3. This build has FFmpeg disabled (licensing), so exotic container/video formats
+   may not load. Audio formats (MP3/AAC/FLAC/OGG/WAV) are fine.
+4. The package's dependency list is inherited from Mixxx and may need a
+   `sudo apt --fix-broken install` on minimal systems.
+
+### First run (all platforms)
 
 1. **Sound Hardware**: pick your controller/output device (e.g. `DDJ-FLX4`) as
    output, and its inputs for the headphone cue.

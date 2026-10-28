@@ -2695,6 +2695,17 @@ target_link_libraries(mixxx-lib PRIVATE FLAC::FLAC)
 find_package(FFTW3f REQUIRED)
 target_link_libraries(mixxx-lib PRIVATE FFTW3::fftw3f)
 
+# The four Spleeter models are not stored in git (~152 MB). When a release
+# build stages them in ./models (CI downloads them there), install them next to
+# the application data so every package format carries them:
+#   macOS bundle -> Mixxx.app/Contents/Resources/models
+#   Linux deb    -> /usr/share/mixxx/models
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/models")
+  install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/models/"
+    DESTINATION "${MIXXX_INSTALL_DATADIR}/models"
+    FILES_MATCHING PATTERN "*.onnx" PATTERN "NOTICE.txt")
+endif()
+
 # FpClassify This is a wrapper around the fpclassify function that prevents
 # inlining It is compiled without optimization and allows to use these function
 # from -ffast-math optimized objects. The MSVC option /fp:fast does not suffer this issue
