@@ -1,23 +1,40 @@
-name: Windows build (4-stem)
+name: Build and publish (4-stem)
 
-# Manual only, plus release tags. Nothing runs on a normal push, so this can
-# never publish anything by accident.
+# One manual workflow for every desktop platform CI can build. Both builds feed
+# a single publish job, so a release is updated once and the README download
+# table is regenerated once - no two workflows racing on main.
+#
+# Leave `release_tag` empty for a build-only run (artifacts, no release).
+# macOS is still built locally; see docs/releases.md.
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Existing release tag to attach the zip to (empty = build only)"
+        description: "Release tag to create/update (empty = build only)"
         type: string
         default: ""
+      build_windows:
+        description: "Build the Windows x64 zip"
+        type: boolean
+        default: true
+      build_linux:
+        description: "Build the Linux .deb"
+        type: boolean
+        default: true
+
 permissions:
   contents: read
 
 concurrency:
-  group: windows-${{ github.ref }}
+  group: build-stems-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  # ---------------------------------------------------------------------------
+  # Windows
+  # ---------------------------------------------------------------------------
+  windows:
+    if: ${{ inputs.build_windows }}
     runs-on: windows-2022
     timeout-minutes: 150
     env:
@@ -117,7 +134,7 @@ jobs:
           Compress-Archive -Path stage\* -DestinationPath mixxx-stems-windows-x64.zip -Force
           Get-Item mixxx-stems-windows-x64.zip | Format-List Name, Length
 
-      - name: Upload portable zip artifact
+      - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
           name: mixxx-stems-windows-x64
@@ -125,21 +142,106 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  # Write access lives only here, never in the job that runs the compiler and
-  # third-party actions. Requires the "release" environment to be approved if
-  # you add protection rules to it (Settings -> Environments).
+  # ---------------------------------------------------------------------------
+  # Linux
+  # ---------------------------------------------------------------------------
+  linux:
+    if: ${{ inputs.build_linux }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      BUILDENV_BASEPATH: /home/runner/buildenv
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Our STFT frontend links FFTW3f (single precision). Debian/Ubuntu ship it
+      # in libfftw3-dev, but without an FFTW3f CMake config (CMakeLists falls
+      # back to find_library).
+      - name: Install FFTW and packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfftw3-dev dpkg-dev
+
+      - name: Set up Mixxx build environment
+        run: tools/debian_buildenv.sh setup
+
+      - name: Fetch Spleeter models
+        run: |
+          mkdir -p models
+          base="https://huggingface.co/Best-Practice/spleeter-4stems-onnx/resolve/main"
+          for stem in vocals drums bass other; do
+            echo "downloading $stem.onnx"
+            curl -fL --retry 3 "$base/$stem.onnx" -o "models/spleeter_$stem.onnx"
+            size=$(stat -c%s "models/spleeter_$stem.onnx")
+            if [ "$size" -lt 10000000 ]; then
+              echo "model $stem looks truncated ($size bytes)"; exit 1
+            fi
+          done
+          ls -lh models/
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DQT6=ON \
+            -DQML=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_BENCH=OFF \
+            -DWARNINGS_FATAL=OFF \
+            -DBULK=ON \
+            -DFFMPEG=OFF \
+            -DLOCALECOMPARE=ON \
+            -DMAD=ON \
+            -DMODPLUG=ON \
+            -DWAVPACK=ON \
+            -DINSTALL_USER_UDEV_RULES=OFF
+
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Package .deb
+        run: |
+          cd build
+          cpack -G DEB
+          ls -lh ./*.deb
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixxx-stems-linux-deb
+          path: build/*.deb
+          retention-days: 14
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Publish once, for whatever was built successfully
+  # ---------------------------------------------------------------------------
   publish:
-    needs: build
-    if: ${{ inputs.release_tag != '' }}
+    needs: [windows, linux]
+    # `!cancelled()` keeps this running when one platform was skipped/failed,
+    # as long as the other produced an artifact.
+    if: ${{ !cancelled() && inputs.release_tag != '' && (needs.windows.result == 'success' || needs.linux.result == 'success') }}
     runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: write
     steps:
-      - name: Download built zip
+      - name: Download Windows zip
+        if: ${{ needs.windows.result == 'success' }}
         uses: actions/download-artifact@v4
         with:
           name: mixxx-stems-windows-x64
+          path: dist
+
+      - name: Download Linux deb
+        if: ${{ needs.linux.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: mixxx-stems-linux-deb
+          path: dist
 
       - name: Ensure the release exists
         env:
@@ -154,11 +256,16 @@ jobs:
               --notes "Automated build of Mixxx 2.5.6 with Spleeter 4-stem separation. Install instructions and credits: see the README."
           fi
 
-      - name: Attach zip to release
+      - name: Attach assets to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ inputs.release_tag }}" mixxx-stems-windows-x64.zip --clobber
+        run: |
+          ls -lh dist/
+          gh release upload "${{ inputs.release_tag }}" dist/* --clobber
 
+  # ---------------------------------------------------------------------------
+  # Regenerate the README download table from the release's assets
+  # ---------------------------------------------------------------------------
   sync-downloads:
     needs: publish
     if: ${{ inputs.release_tag != '' }}

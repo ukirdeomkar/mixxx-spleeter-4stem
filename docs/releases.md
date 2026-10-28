@@ -6,21 +6,24 @@ Status:
 
 | Platform | Built by | Published by |
 |---|---|---|
-| Windows zip | `.github/workflows/windows-build.yml` | same workflow (`publish` job) |
-| Linux deb | `.github/workflows/linux-build.yml` | same workflow (`publish` job) |
+| Windows zip | `.github/workflows/build-stems.yml` (`windows` job) | same workflow (`publish` job) |
+| Linux deb | `.github/workflows/build-stems.yml` (`linux` job) | same workflow (`publish` job) |
 | macOS DMG | locally (see below) | manual upload |
 
-Both build workflows are `workflow_dispatch` only. Give `release_tag` a tag and
-they build, create the release if the tag is new (`gh release create
---prerelease`), attach the asset with `--clobber`, and then run
-`sync-downloads.yml` to regenerate the README download table between the
+`build-stems.yml` is `workflow_dispatch` only and builds both platforms in
+parallel, then publishes them in **one** job. Give `release_tag` a tag and it
+creates the release if the tag is new (`gh release create --prerelease`),
+attaches every produced asset with `--clobber`, and then runs
+`sync-downloads.yml` once to regenerate the README download table between the
 `<!-- downloads:start -->` / `<!-- downloads:end -->` markers.
 
-Leave `release_tag` empty for a build-only run (artifact only).
+Leave `release_tag` empty for a build-only run (artifacts only). The
+`build_windows` / `build_linux` inputs let you skip one platform; the publish
+job still runs for whichever platform succeeded.
 
-Security shape: build jobs run with `permissions: contents: read`; only the
-small `publish` job gets `contents: write`, and it does nothing but download
-the artifact and call `gh release upload`. It runs in the `release`
+Security shape: both build jobs run with `permissions: contents: read`; only
+the small `publish` job gets `contents: write`, and it does nothing but
+download the artifacts and call `gh release upload`. It runs in the `release`
 environment, so requiring a reviewer there gates all publishing behind a click
 (Settings → Environments → release).
 
@@ -75,7 +78,7 @@ models loading from `Mixxx.app/Contents/Resources/models/...`.
 
 ## Windows (x64) — portable zip
 
-`Actions -> "Windows build (4-stem)" -> Run workflow`, `release_tag` set.
+`Actions -> "Build and publish (4-stem)" -> Run workflow`, `release_tag` set.
 
 The workflow builds with MSVC on `windows-2022`, stages `mixxx.exe` + `res/` +
 DLLs + the four models, and produces `mixxx-stems-windows-x64.zip`.
@@ -96,7 +99,7 @@ Gotchas, learned the hard way:
 
 ## Linux — deb
 
-`Actions -> "Linux build (4-stem)" -> Run workflow`, `release_tag` set.
+`Actions -> "Build and publish (4-stem)" -> Run workflow`, `release_tag` set.
 
 The workflow uses Mixxx's `tools/debian_buildenv.sh` on `ubuntu-22.04`, builds
 with FFmpeg off, and packages with `cpack -G DEB`. The models are installed to
