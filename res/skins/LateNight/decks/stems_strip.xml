@@ -49,35 +49,35 @@
 
       <WidgetGroup><Size>4f,0min</Size></WidgetGroup>
 
-      <!-- ================= DRUMS ================= -->
+      <!-- ================= INSTRUMENTS / OTHER ================= -->
       <PushButton>
-        <Tooltip>Drums: click to mute/unmute, right-click to solo</Tooltip>
-        <ObjectName>StemDrumsButton</ObjectName>
+        <Tooltip>Instruments: click to mute/unmute, right-click to solo</Tooltip>
+        <ObjectName>StemInstButton</ObjectName>
         <Size>50f,24f</Size>
         <NumberStates>2</NumberStates>
         <RightClickIsPushButton>true</RightClickIsPushButton>
         <State>
           <Number>0</Number>
-          <Text>DRUM</Text>
+          <Text>INST</Text>
           <Alignment>center</Alignment>
         </State>
         <State>
           <Number>1</Number>
-          <Text>DRUM</Text>
+          <Text>INST</Text>
           <Alignment>center</Alignment>
         </State>
         <Connection>
-          <ConfigKey><Variable name="Group"/>,stem_drums_enabled</ConfigKey>
+          <ConfigKey><Variable name="Group"/>,stem_inst_enabled</ConfigKey>
           <ButtonState>LeftButton</ButtonState>
         </Connection>
         <Connection>
-          <ConfigKey><Variable name="Group"/>,stem_drums_solo</ConfigKey>
+          <ConfigKey><Variable name="Group"/>,stem_inst_solo</ConfigKey>
           <ButtonState>RightButton</ButtonState>
         </Connection>
       </PushButton>
       <PushButton>
-        <Tooltip>Solo drums</Tooltip>
-        <ObjectName>StemSoloDrmButton</ObjectName>
+        <Tooltip>Solo instruments</Tooltip>
+        <ObjectName>StemSoloInstButton</ObjectName>
         <Size>22f,24f</Size>
         <NumberStates>1</NumberStates>
         <State>
@@ -86,7 +86,7 @@
           <Alignment>center</Alignment>
         </State>
         <Connection>
-          <ConfigKey><Variable name="Group"/>,stem_drums_solo</ConfigKey>
+          <ConfigKey><Variable name="Group"/>,stem_inst_solo</ConfigKey>
         </Connection>
       </PushButton>
 
@@ -135,35 +135,35 @@
 
       <WidgetGroup><Size>4f,0min</Size></WidgetGroup>
 
-      <!-- ================= INSTRUMENTS / OTHER ================= -->
+      <!-- ================= DRUMS ================= -->
       <PushButton>
-        <Tooltip>Instruments: click to mute/unmute, right-click to solo</Tooltip>
-        <ObjectName>StemInstButton</ObjectName>
+        <Tooltip>Drums: click to mute/unmute, right-click to solo</Tooltip>
+        <ObjectName>StemDrumsButton</ObjectName>
         <Size>50f,24f</Size>
         <NumberStates>2</NumberStates>
         <RightClickIsPushButton>true</RightClickIsPushButton>
         <State>
           <Number>0</Number>
-          <Text>INST</Text>
+          <Text>DRUM</Text>
           <Alignment>center</Alignment>
         </State>
         <State>
           <Number>1</Number>
-          <Text>INST</Text>
+          <Text>DRUM</Text>
           <Alignment>center</Alignment>
         </State>
         <Connection>
-          <ConfigKey><Variable name="Group"/>,stem_inst_enabled</ConfigKey>
+          <ConfigKey><Variable name="Group"/>,stem_drums_enabled</ConfigKey>
           <ButtonState>LeftButton</ButtonState>
         </Connection>
         <Connection>
-          <ConfigKey><Variable name="Group"/>,stem_inst_solo</ConfigKey>
+          <ConfigKey><Variable name="Group"/>,stem_drums_solo</ConfigKey>
           <ButtonState>RightButton</ButtonState>
         </Connection>
       </PushButton>
       <PushButton>
-        <Tooltip>Solo instruments</Tooltip>
-        <ObjectName>StemSoloInstButton</ObjectName>
+        <Tooltip>Solo drums</Tooltip>
+        <ObjectName>StemSoloDrmButton</ObjectName>
         <Size>22f,24f</Size>
         <NumberStates>1</NumberStates>
         <State>
@@ -172,10 +172,9 @@
           <Alignment>center</Alignment>
         </State>
         <Connection>
-          <ConfigKey><Variable name="Group"/>,stem_inst_solo</ConfigKey>
+          <ConfigKey><Variable name="Group"/>,stem_drums_solo</ConfigKey>
         </Connection>
       </PushButton>
-
       <WidgetGroup><Size>4f,0min</Size></WidgetGroup>
 
       <!-- ================= RESET + ENGINE MODE ================= -->
