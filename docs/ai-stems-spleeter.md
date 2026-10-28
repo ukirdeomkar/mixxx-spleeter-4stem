@@ -213,3 +213,45 @@ stems are ~420 MB per five minute track. The cache format was bumped to
 - Recording a stem-bus mix, and per-stem FX sends.
 - Optional: derive the fourth stem as `mix - (voc+drum+bass)` to save one iSTFT
   per frame, and compress a disk cache (FLAC/int16) to make reloads instant.
+
+## Re-check: could Demucs run here after all? (2026)
+
+Someone will ask again, so this is the measurement that settles it. Same
+machine (MacBookAir7,2, i5-5350U 2C/4T, 8 GB, macOS 12.7.6), same 7.8 s
+HTDemucs segment, one process at a time. RTF is wall seconds per audio
+second, so **lower is better and 1.0 is realtime**.
+
+| Path | Threads | s / 7.8 s segment | RTF | Verdict |
+|---|---:|---:|---:|---|
+| Spleeter 4-stem, ONNX Runtime | 2 | 1.30 per 11.9 s block | **0.11** | 9.1x faster than realtime |
+| HTDemucs fp32 ONNX, ONNX Runtime | 2-4 | 9.2 - 16.0 | **1.2 - 2.1** | 0.5 - 0.85x realtime |
+| HTDemucs, `wavey-ai/stemsplits` (pure Rust, C GEMM) | 4 | 25.7 | **3.29** | 0.30x realtime |
+| HTDemucs, `nikhilunni/demucs-rs` (Burn ndarray, CPU) | n/a | 281 (721 s for 20 s) | **36.1** | 0.03x realtime |
+| HTDemucs, `nikhilunni/demucs-rs` (Burn wgpu / Metal) | n/a | crash | - | does not run |
+
+Notes, because each row is a trap:
+
+- **The runtime wrapper is not the variable.** ONNX Runtime, the Rust `ort`
+  crate and `sevagh/demucs.onnx` all execute the same graph on the same
+  kernels. One segment is ~300 GFLOP; this CPU sustains ~19-30 GFLOPS, and
+  realtime needs 38.
+- **`stemsplits` is slower here than its README suggests.** Its published
+  RTF 1.61 is one *thread on Apple Silicon* with a NEON micro-kernel. Built
+  here (AVX2, `target-cpu=native`) it is 41.8 s at one thread (RTF 5.36),
+  30.4 s at two (3.90) and 25.7 s at four (3.29) - about 3x slower than ONNX
+  Runtime on the same box, not 1.6x faster.
+- **`demucs-rs` does not start on this GPU.** Burn's wgpu backend fails with
+  `new_compute_pipeline_state: "AIR builtin function was called but no
+  definition was found"` - the Intel HD 6000 (Metal GPUFamily macOS 1) cannot
+  compile the generated Metal kernels. Its CPU fallback (ndarray, no rayon)
+  takes 721 s for 20 s of audio.
+- **ONNX Runtime's CoreML EP (the Metal path) is killed** on this graph:
+  924 of 1427 nodes supported, 106 partitions, then exit 137 (OOM) on 8 GB.
+- **With the 25% overlap every Demucs pipeline uses**, each 7.8 s segment
+  only advances 5.85 s of audio, so the whole-track RTF is 1.33x worse than
+  the per-segment figures above.
+
+Conclusion: Demucs quality needs ~10 minutes per 5-minute track here, and
+holds 4.8-5.2 GB of RAM while doing it. It is viable only as an offline
+"HQ prepare" pass, not as a live engine, and no rewrite of the runtime
+changes that. Spleeter stays.
