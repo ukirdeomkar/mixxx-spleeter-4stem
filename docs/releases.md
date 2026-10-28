@@ -1,12 +1,34 @@
 # Building and publishing release artifacts
 
-Current state: **manual, one-off**. The CI builds code but does not publish
-anything. This file records exactly how the artifacts on the release page were
-produced so it can be repeated, and what should be automated later.
-
 Release: <https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/tag/v2.5.6-stems.1>
 
+Status:
+
+| Platform | Built by | Published by |
+|---|---|---|
+| Windows zip | `.github/workflows/windows-build.yml` | same workflow (`publish` job) |
+| Linux deb | `.github/workflows/linux-build.yml` | same workflow (`publish` job) |
+| macOS DMG | locally (see below) | manual upload |
+
+Both build workflows are `workflow_dispatch` only. Give `release_tag` a tag and
+they build, create the release if the tag is new (`gh release create
+--prerelease`), attach the asset with `--clobber`, and then run
+`sync-downloads.yml` to regenerate the README download table between the
+`<!-- downloads:start -->` / `<!-- downloads:end -->` markers.
+
+Leave `release_tag` empty for a build-only run (artifact only).
+
+Security shape: build jobs run with `permissions: contents: read`; only the
+small `publish` job gets `contents: write`, and it does nothing but download
+the artifact and call `gh release upload`. It runs in the `release`
+environment, so requiring a reviewer there gates all publishing behind a click
+(Settings → Environments → release).
+
 ## macOS (Intel) — DMG
+
+This is the only platform still built and uploaded by hand: Qt 6.5's `moc`
+fails to parse `<concepts>` with SDKs newer than 12.1, so the runner image
+cannot build it yet.
 
 Requires the build from `README.md` (`-DMACOS_BUNDLE=ON`, macOS 12.1 SDK).
 
@@ -15,20 +37,19 @@ cd ~/mixxx-stems
 
 # 1. Bundle install into dist/ (fixup_bundle copies non-system dylibs and
 #    rewrites @rpath to @executable_path/../Frameworks, then ad-hoc signs)
+mkdir -p models   # the four spleeter_*.onnx + NOTICE.txt
 cmake -S . -B build -DMACOS_BUNDLE=ON
 cmake --build build --parallel 2
 cmake --install build --prefix "$PWD/dist"
 
-# 2. The ONNX models are not known to Mixxx's install rules - add them
-mkdir -p dist/Mixxx.app/Contents/Resources/models
-cp ~/Library/Application\ Support/Mixxx/models/spleeter_*.onnx \
-   dist/Mixxx.app/Contents/Resources/models/
+# CMake installs models/*.onnx into Contents/Resources/models when ./models
+# exists at configure time, so no manual copy is needed any more.
 
-# 3. Re-sign, because files were added after the install-time signature
+# 2. Re-sign, because files were added after the install-time signature
 codesign --force --deep --sign - \
   --entitlements packaging/macos/Mixxx.entitlements dist/Mixxx.app
 
-# 4. Stage and compress
+# 3. Stage and compress
 rm -rf dist/dmg-stage && mkdir -p dist/dmg-stage
 cp -R dist/Mixxx.app dist/dmg-stage/
 ln -s /Applications dist/dmg-stage/Applications
@@ -36,6 +57,8 @@ ln -s /Applications dist/dmg-stage/Applications
 hdiutil create -volname "Mixxx 2.5.6 Stems" \
   -srcfolder dist/dmg-stage -ov -format UDZO \
   dist/Mixxx-Stems-2.5.6-macOS-x86_64.dmg
+
+# 4. Publish (see "Manual fallback" below; this machine has no gh CLI)
 ```
 
 Checks before publishing:
@@ -52,22 +75,16 @@ models loading from `Mixxx.app/Contents/Resources/models/...`.
 
 ## Windows (x64) — portable zip
 
-The build runs in GitHub Actions (`.github/workflows/windows-build.yml`),
-manually triggered:
-
-```
-Actions -> "Windows build (4-stem)" -> Run workflow (branch: main)
-```
+`Actions -> "Windows build (4-stem)" -> Run workflow`, `release_tag` set.
 
 The workflow builds with MSVC on `windows-2022`, stages `mixxx.exe` + `res/` +
-DLLs + the four models, and uploads the artifact `mixxx-stems-windows-x64`.
+DLLs + the four models, and produces `mixxx-stems-windows-x64.zip`.
 
 Gotchas, learned the hard way:
 
 - GitHub artifacts are a **zip containing a zip**, and they require a GitHub
-  login to download. Download the artifact, extract the outer zip, and publish
-  the inner `mixxx-stems-windows-x64.zip` to the release so it has a public,
-  anonymous download link.
+  login to download. The release asset is therefore the inner zip produced by
+  the workflow, which has a public, anonymous download link.
 - Mixxx's own ONNX auto-download breaks on CMake 3.21
   (`At least one entry of URL is a path`), so the workflow downloads ONNX
   Runtime 1.19.2 itself and passes `ONNXRUNTIME_INCLUDE_DIR` /
@@ -77,45 +94,56 @@ Gotchas, learned the hard way:
 - The zip must keep its folder layout: `mixxx.exe` needs `onnxruntime.dll`,
   `fdk-aac.dll`, `models/`, `controllers/`, `platforms/`, `skins/` next to it.
 
-## Publishing (manual, via the GitHub API)
+## Linux — deb
 
-No `gh` CLI on the build machine; the API is used with the token git already
-stores in the macOS keychain:
+`Actions -> "Linux build (4-stem)" -> Run workflow`, `release_tag` set.
+
+The workflow uses Mixxx's `tools/debian_buildenv.sh` on `ubuntu-22.04`, builds
+with FFmpeg off, and packages with `cpack -G DEB`. The models are installed to
+`/usr/share/mixxx/models`.
+
+Gotchas:
+
+- Debian/Ubuntu ship `libfftw3f` but no `FFTW3fConfig.cmake`; CMakeLists falls
+  back to `find_library(fftw3f)`.
+- ONNX Runtime is not a distro package. The CMake install rule puts the real
+  library (symlinks resolved) at `/usr/lib/mixxx/libonnxruntime.so.1` and sets
+  `INSTALL_RPATH=$ORIGIN/../lib/mixxx`.
+- `dpkg-shlibdeps` must be told where to find it via
+  `CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS` (a **directory**). That variable
+  has to be set **before `include(CPack)`** or it never reaches
+  `CPackConfig.cmake`.
+
+## Manual fallback (no `gh` CLI)
+
+The API works with the token git already stores in the macOS keychain:
 
 ```bash
 TOKEN=$(printf "protocol=https\nhost=github.com\n" | git credential fill | sed -n 's/^password=//p')
 ```
 
-1. Create the release (once per version):
+```bash
+# create (once per version)
+curl -s -X POST -H "Authorization: token $TOKEN" \
+  https://api.github.com/repos/ukirdeomkar/mixxx-spleeter-4stem/releases \
+  -d '{"tag_name":"v2.5.6-stems.1","target_commitish":"main",
+       "name":"...","prerelease":true,"body":"..."}'
 
-   ```bash
-   curl -s -X POST -H "Authorization: token $TOKEN" \
-     https://api.github.com/repos/ukirdeomkar/mixxx-spleeter-4stem/releases \
-     -d '{"tag_name":"v2.5.6-stems.1","target_commitish":"main",
-          "name":"...","prerelease":true,"body":"..."}'
-   ```
+# upload an asset. To replace an existing one, delete it first:
+#   GET  .../releases/<ID>/assets   -> find asset id
+#   DELETE .../releases/assets/<asset_id>
+curl -s -X POST -H "Authorization: token $TOKEN" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary "@dist/Mixxx-Stems-2.5.6-macOS-x86_64.dmg" \
+  "https://uploads.github.com/repos/ukirdeomkar/mixxx-spleeter-4stem/releases/<ID>/assets?name=Mixxx-Stems-2.5.6-macOS-x86_64.dmg"
 
-2. Upload each asset:
+# then refresh the README table
+Actions -> "Sync download links" -> tag v2.5.6-stems.1
+```
 
-   ```bash
-   curl -s -X POST -H "Authorization: token $TOKEN" \
-     -H "Content-Type: application/octet-stream" \
-     --data-binary "@dist/Mixxx-Stems-2.5.6-macOS-x86_64.dmg" \
-     "https://uploads.github.com/repos/ukirdeomkar/mixxx-spleeter-4stem/releases/<ID>/assets?name=Mixxx-Stems-2.5.6-macOS-x86_64.dmg"
-   ```
+## TODO
 
-3. Edit the release notes with `PATCH .../releases/<ID>`.
-
-Note: a `v*` tag push also triggers the Windows workflow (by design). If the tag
-is created before the code is final, cancel that run instead of letting it build
-the wrong commit.
-
-## TODO — automate
-
-- Add a `release` workflow: build macOS (pinned SDK) and Windows, then upload
-  the DMG and zip to the release an existing tag points at, using
-  `GITHUB_TOKEN` (`permissions: contents: write`).
-- macOS on GitHub runners currently needs the SDK pinning solved first; until
-  then the DMG is produced locally.
-- Only then move the "Download" links in `README.md` from the fixed
-  `v2.5.6-stems.1` URLs to the `/releases/latest` redirect.
+- Get macOS into CI. Upstream Mixxx builds macOS on `macos-13`/`macos-15-intel`
+  with its release buildenv; worth trying before pinning the 12.1 SDK.
+- Once every platform comes from one tag, point the README links at
+  `/releases/latest` instead of a fixed tag.
