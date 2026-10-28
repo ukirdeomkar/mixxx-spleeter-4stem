@@ -54,14 +54,21 @@ jobs:
               ("Linux", ".deb", "Linux (Ubuntu 22.04+)", "built by CI, untested"),
           ]
 
+          assets = release.get("assets", [])
           rows = []
           for label, ext, name, status in platforms:
-              for asset in release.get("assets", []):
-                  if asset["name"].lower().endswith(ext) and label.lower() in asset["name"].lower():
-                      url = asset["browser_download_url"]
-                      size = round(asset["size"] / 1048576, 1)
-                      rows.append(f"| **{name}** | [{asset['name']}]({url}) ({size} MB) | {status} |")
-                      break
+              # Match on the file extension: each platform has exactly one.
+              # Prefer an asset whose name mentions the platform, in case an
+              # older build left a second file around.
+              candidates = [a for a in assets if a["name"].lower().endswith(ext)]
+              if not candidates:
+                  continue
+              asset = next(
+                  (a for a in candidates if label.lower() in a["name"].lower()),
+                  candidates[0])
+              url = asset["browser_download_url"]
+              size = round(asset["size"] / 1048576, 1)
+              rows.append(f"| **{name}** | [{asset['name']}]({url}) ({size} MB) | {status} |")
 
           if not rows:
               raise SystemExit(f"no assets matched on release {tag}")
