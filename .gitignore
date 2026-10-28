@@ -81,3 +81,6 @@ models/*.onnx
 build/
 buildenv/
 build_*.log
+
+# local packaging output
+dist/
