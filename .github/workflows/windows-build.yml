@@ -1,0 +1,109 @@
+name: Windows build (4-stem)
+
+# Manual only, plus release tags. Nothing runs on a normal push, so this can
+# never publish anything by accident.
+on:
+  workflow_dispatch:
+    inputs:
+      upload_artifact:
+        description: "Upload the portable zip as a workflow artifact"
+        type: boolean
+        default: true
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 150
+    env:
+      BUILDENV_BASEPATH: C:\buildenv
+      BUILDENV_RELEASE: "TRUE"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v2.2
+        with:
+          cmake-version: "3.21.x"
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up Mixxx build environment (vcpkg deps)
+        shell: cmd
+        run: tools\windows_buildenv.bat setup
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build `
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo `
+            -DCMAKE_PREFIX_PATH="$env:CMAKE_PREFIX_PATH" `
+            -DQT6=ON `
+            -DQML=OFF `
+            -DBUILD_TESTING=OFF `
+            -DBUILD_BENCH=OFF `
+            -DWARNINGS_FATAL=OFF `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-release `
+            -DBULK=ON -DFFMPEG=OFF -DHSS1394=ON -DLOCALECOMPARE=ON -DMAD=ON `
+            -DMEDIAFOUNDATION=ON -DMODPLUG=ON -DWAVPACK=ON `
+            -DKEYFINDER=ON -DOPUS=ON -DVINYLCONTROL=ON -DHID=ON -DLILV=ON
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config RelWithDebInfo --parallel
+
+      - name: Stage portable build (exe + res + DLLs + models)
+        shell: pwsh
+        run: |
+          cmake --install build --config RelWithDebInfo --prefix stage
+
+          # ONNX Runtime is linked via rpath/import lib; the DLL is not part of
+          # Mixxx's install rules, so copy it next to the executable.
+          $ort = Get-ChildItem build\_deps\onnxruntime_prebuilt-src\lib\*.dll -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($ort) {
+            Copy-Item $ort.FullName stage\
+            Write-Host "bundled $($ort.Name)"
+          } else {
+            Write-Warning "onnxruntime.dll not found - the app will not start"
+          }
+
+          # fdk-aac is loaded at runtime with QLibrary, not linked.
+          $fdk = Get-ChildItem "$env:MIXXX_VCPKG_ROOT\installed\x64-windows-release\bin\fdk-aac*.dll" -ErrorAction SilentlyContinue
+          if ($fdk) {
+            Copy-Item $fdk.FullName stage\
+            Write-Host "bundled $($fdk.Name)"
+          }
+
+          # Spleeter 4-stem models, fetched at build time (not stored in git).
+          New-Item -ItemType Directory -Force stage\models | Out-Null
+          $base = "https://huggingface.co/Best-Practice/spleeter-4stems-onnx/resolve/main"
+          foreach ($stem in @("vocals", "drums", "bass", "other")) {
+            $out = "stage\models\spleeter_$stem.onnx"
+            Write-Host "downloading $stem.onnx"
+            Invoke-WebRequest -Uri "$base/$stem.onnx" -OutFile $out
+            if ((Get-Item $out).Length -lt 10MB) { throw "model $stem looks truncated" }
+          }
+
+          Copy-Item README.md stage\README-mixxx-stems.md -ErrorAction SilentlyContinue
+          Compress-Archive -Path stage\* -DestinationPath mixxx-stems-windows-x64.zip -Force
+          Get-Item mixxx-stems-windows-x64.zip | Format-List Name, Length
+
+      - name: Upload portable zip
+        if: ${{ github.event_name == 'push' || inputs.upload_artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixxx-stems-windows-x64
+          path: mixxx-stems-windows-x64.zip
+          retention-days: 14
+          if-no-files-found: error
