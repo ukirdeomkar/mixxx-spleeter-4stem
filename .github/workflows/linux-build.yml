@@ -102,6 +102,19 @@ jobs:
           name: mixxx-stems-linux-deb
           path: deb
 
+      - name: Ensure the release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "creating release $TAG"
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --prerelease \
+              --notes "Automated build of Mixxx 2.5.6 with Spleeter 4-stem separation. Install instructions and credits: see the README."
+          fi
+
       - name: Attach .deb to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
