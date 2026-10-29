@@ -210,6 +210,9 @@ and the last button switches between `DSP` (instant) and `AI` (Spleeter).
   hardware and Demucs does not. An optional Demucs ("Quality") engine is
   designed but not implemented — see [`docs/todo-hq-demucs.md`](docs/todo-hq-demucs.md)
   for the measurements, packaging cost and gating rules.
+- No Android APK. Android support exists only in Mixxx `main` (2.7-dev, QML UI),
+  not in this 2.5.6 tree, and MIDI controllers are disabled there — so the FLX4
+  would not work even after a port. See [`docs/todo-android.md`](docs/todo-android.md).
 
 ## License
 
