@@ -31,6 +31,21 @@ EffectsManager::EffectsManager(
           m_initializedFromEffectsXml(false) {
     qRegisterMetaType<EffectChainMixMode>("EffectChainMixMode");
 
+    // Easy Beat FX: one effect per deck, selected with the controller's channel
+    // buttons, with the per-effect parameters hidden. Exposed as a control
+    // object so controller mappings and skins can follow the preference.
+    const ConfigKey easyBeatFxConfigKey("[Effects]", "EasyBeatFx");
+    m_pEasyBeatFxMode = std::make_unique<ControlPushButton>(easyBeatFxConfigKey);
+    m_pEasyBeatFxMode->setButtonMode(ControlPushButton::TOGGLE);
+    m_pEasyBeatFxMode->set(m_pConfig->getValue(easyBeatFxConfigKey, true) ? 1.0 : 0.0);
+    // EffectsManager is not a QObject, so use the control itself as context.
+    QObject::connect(m_pEasyBeatFxMode.get(),
+            &ControlObject::valueChanged,
+            m_pEasyBeatFxMode.get(),
+            [this, easyBeatFxConfigKey](double value) {
+                m_pConfig->set(easyBeatFxConfigKey, ConfigValue(value > 0.5 ? 1 : 0));
+            });
+
     m_pBackendManager = EffectsBackendManagerPointer(new EffectsBackendManager());
 
     auto [pRequestPipe, pResponsePipe] = TwoWayMessagePipe<EffectsRequest*,

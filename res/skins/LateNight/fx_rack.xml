@@ -13,21 +13,25 @@
       -->
   <Template src="skins:LateNight/fx/singletons.xml">
     <SetVariable name="FxUnit">1</SetVariable>
+    <SetVariable name="FxLabel">FX1</SetVariable>
     <SetVariable name="ArcColorSuper"><Variable name="ArcColorFx12Quick"/></SetVariable>
     <SetVariable name="KnobColor"><Variable name="KnobColorFx12"/></SetVariable>
   </Template>
   <Template src="skins:LateNight/fx/singletons.xml">
     <SetVariable name="FxUnit">2</SetVariable>
+    <SetVariable name="FxLabel">FX2</SetVariable>
     <SetVariable name="ArcColorSuper"><Variable name="ArcColorFx12Quick"/></SetVariable>
     <SetVariable name="KnobColor"><Variable name="KnobColorFx12"/></SetVariable>
   </Template>
   <Template src="skins:LateNight/fx/singletons.xml">
     <SetVariable name="FxUnit">3</SetVariable>
+    <SetVariable name="FxLabel">BOTH</SetVariable>
     <SetVariable name="ArcColorSuper"><Variable name="ArcColorFx34"/></SetVariable>
     <SetVariable name="KnobColor"><Variable name="KnobColorFx34"/></SetVariable>
   </Template>
   <Template src="skins:LateNight/fx/singletons.xml">
     <SetVariable name="FxUnit">4</SetVariable>
+    <SetVariable name="FxLabel">FX4</SetVariable>
     <SetVariable name="ArcColorSuper"><Variable name="ArcColorFx34"/></SetVariable>
     <SetVariable name="KnobColor"><Variable name="KnobColorFx34"/></SetVariable>
   </Template>
@@ -37,6 +41,53 @@
     <Layout>horizontal</Layout>
     <SizePolicy>me,max</SizePolicy>
     <Children>
+
+      <!-- Easy Beat FX: deck 1 left, shared effect in the middle, deck 2 right.
+           Layout and visibility follow Preferences > Effects > Easy Beat FX. -->
+      <WidgetGroup>
+        <Layout>horizontal</Layout>
+        <SizePolicy>me,max</SizePolicy>
+        <Children>
+        <WidgetGroup>
+          <Layout>vertical</Layout>
+          <SizePolicy>i,min</SizePolicy>
+          <Children>
+            <Template src="skins:LateNight/fx/unit.xml">
+              <SetVariable name="FxUnit">1</SetVariable>
+            </Template>
+          </Children>
+        </WidgetGroup>
+        <WidgetGroup>
+          <Layout>vertical</Layout>
+          <SizePolicy>i,min</SizePolicy>
+          <Children>
+            <Template src="skins:LateNight/fx/unit.xml">
+              <SetVariable name="FxUnit">3</SetVariable>
+            </Template>
+          </Children>
+        </WidgetGroup>
+        <WidgetGroup>
+          <Layout>vertical</Layout>
+          <SizePolicy>i,min</SizePolicy>
+          <Children>
+            <Template src="skins:LateNight/fx/unit.xml">
+              <SetVariable name="FxUnit">2</SetVariable>
+            </Template>
+          </Children>
+        </WidgetGroup>
+        </Children>
+        <Connection>
+          <ConfigKey>[Effects],EasyBeatFx</ConfigKey>
+          <BindProperty>visible</BindProperty>
+        </Connection>
+      </WidgetGroup>
+
+      <!-- Classic rack: four units in two columns, parameters always visible. -->
+      <WidgetGroup>
+        <Layout>horizontal</Layout>
+        <SizePolicy>me,max</SizePolicy>
+        <Children>
+
       <!-- These two  racks host 4 effect units total which can be displayed
           in various combinations:
           * 1 effect unit
@@ -149,6 +200,13 @@
           </WidgetGroup>
         </Children>
       </WidgetGroup><!-- EffectUnit 2 + 4 -->
+        </Children>
+        <Connection>
+          <ConfigKey>[Effects],EasyBeatFx</ConfigKey>
+          <Transform><Not/></Transform>
+          <BindProperty>visible</BindProperty>
+        </Connection>
+      </WidgetGroup>
 
     </Children>
     <Connection>

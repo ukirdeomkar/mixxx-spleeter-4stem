@@ -20,6 +20,12 @@ class WEffectParameterNameBase : public WLabel {
     void dropEvent(QDropEvent* event) override;
     QSize sizeHint() const override;
 
+    /// Show only the parameter value, never the parameter name, and keep it on
+    /// screen. Used for compact readouts such as the Beat FX division.
+    void setShowValueOnly(bool showValueOnly) {
+        m_showValueOnly = showValueOnly;
+    }
+
   protected slots:
     void parameterUpdated();
     void showNewValue(double v);
@@ -37,5 +43,6 @@ class WEffectParameterNameBase : public WLabel {
     QString m_text;
     QTimer m_displayNameResetTimer;
     bool m_parameterUpdated;
+    bool m_showValueOnly = false;
     int m_widthHint;
 };

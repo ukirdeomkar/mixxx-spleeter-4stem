@@ -187,8 +187,12 @@ PioneerDDJFLX4.alpha = 1.0/8;
 PioneerDDJFLX4.beta = PioneerDDJFLX4.alpha/32;
 
 // Multiplier for fast seek through track using SHIFT+JOGWHEEL
-PioneerDDJFLX4.fastSeekScale = 150;
+// Fraction of the whole track moved per jog tick with SHIFT held.
+PioneerDDJFLX4.searchStep = 0.0008;
 PioneerDDJFLX4.bendScale = 0.8;
+
+// Step applied by BEAT </> to the focused effect's first parameter.
+PioneerDDJFLX4.beatStepSize = 0.25;
 
 PioneerDDJFLX4.tempoRanges = [0.06, 0.10, 0.16, 0.25];
 
@@ -238,6 +242,43 @@ PioneerDDJFLX4.toggleLight = function(midiIn, active) {
 PioneerDDJFLX4.init = function() {
     engine.setValue("[EffectRack1_EffectUnit1]", "show_focus", 1);
 
+    // One Beat FX unit per deck: unit 1 only on channel 1, unit 2 only on
+    // channel 2, both fully wet so ON/OFF alone makes the effect audible.
+    engine.setValue("[EffectRack1_EffectUnit1]", "group_[Channel1]_enable", 1);
+    engine.setValue("[EffectRack1_EffectUnit1]", "group_[Channel2]_enable", 0);
+    engine.setValue("[EffectRack1_EffectUnit2]", "group_[Channel1]_enable", 0);
+    engine.setValue("[EffectRack1_EffectUnit2]", "group_[Channel2]_enable", 1);
+
+    // Unit 3 is the shared Beat FX for both decks (CH1 + CH2 on the switch).
+    engine.setValue("[EffectRack1_EffectUnit3]", "group_[Channel1]_enable", 1);
+    engine.setValue("[EffectRack1_EffectUnit3]", "group_[Channel2]_enable", 1);
+    PioneerDDJFLX4.applyFaderLinkedMix();
+
+    // Easy FX layout: collapse the per-effect parameter rows (Time, Feedback,
+    // Ping Pong, Send) so each unit shows only ON/OFF, the super knob and the
+    // effect name - the way a Rekordbox Beat FX block looks.
+    const showParameters = PioneerDDJFLX4.easyBeatFx() ? 0 : 1;
+    for (let unit = 1; unit <= 4; ++unit) {
+        engine.setValue("[EffectRack1_EffectUnit" + unit + "]", "show_parameters", showParameters);
+    }
+
+    // Multi-slot racks hide units 3 and 4 by default. Easy mode needs unit 3
+    // visible because it is the shared Beat FX for both decks.
+    if (PioneerDDJFLX4.easyBeatFx()) {
+        engine.setValue("[Skin]", "show_4effectunits", 1);
+    }
+
+    // React to the preference without a restart: switching easy mode off
+    // restores the full parameter rows, switching it on collapses them again.
+    engine.makeConnection("[Effects]", "EasyBeatFx", function(value) {
+        const showParameters = value > 0.5 ? 0 : 1;
+        for (let unit = 1; unit <= 4; ++unit) {
+            engine.setValue("[EffectRack1_EffectUnit" + unit + "]",
+                    "show_parameters", showParameters);
+        }
+        PioneerDDJFLX4.applyFaderLinkedMix();
+    });
+
     engine.makeConnection("[Channel1]", "vu_meter", PioneerDDJFLX4.vuMeterUpdate);
     engine.makeConnection("[Channel2]", "vu_meter", PioneerDDJFLX4.vuMeterUpdate);
 
@@ -246,10 +287,6 @@ PioneerDDJFLX4.init = function() {
 
     engine.softTakeover("[Channel1]", "rate", true);
     engine.softTakeover("[Channel2]", "rate", true);
-    engine.softTakeover("[EffectRack1_EffectUnit1_Effect1]", "meta", true);
-    engine.softTakeover("[EffectRack1_EffectUnit1_Effect2]", "meta", true);
-    engine.softTakeover("[EffectRack1_EffectUnit1_Effect3]", "meta", true);
-    engine.softTakeover("[EffectRack1_EffectUnit1]", "mix", true);
 
     // NOTE: the SAMPLER pad mode is repurposed for stem control (see
     // stemPadPressed below), so sampler LED feedback is not wired up here.
@@ -319,23 +356,90 @@ PioneerDDJFLX4.toggleFxLight = function(_value, _group, _control) {
     PioneerDDJFLX4.toggleLight(PioneerDDJFLX4.lights.shiftBeatFx, enabled);
 };
 
-PioneerDDJFLX4.focusedFxGroup = function() {
-    const focusedFx = engine.getValue("[EffectRack1_EffectUnit1]", "focused_effect");
-    return "[EffectRack1_EffectUnit1_Effect" + focusedFx + "]";
+// Easy mode: one Beat FX unit per deck, mirroring a Rekordbox mixer.
+// Unit 1 belongs to deck 1, unit 2 to deck 2. The CH SELECT buttons pick which
+// unit the knobs, ON/OFF and BEAT arrows act on, so each deck keeps its own
+// effect and its own beat division.
+PioneerDDJFLX4.fxUnit = 1;
+
+// Preferences > Effects > "Easy mode: one effect per deck, parameters hidden".
+PioneerDDJFLX4.easyBeatFx = function() {
+    return engine.getValue("[Effects]", "EasyBeatFx") > 0.5;
 };
 
+// Easy mode only: make each Beat FX unit follow its channel fader, so closing
+// a fader also silences that deck's effect and its tail. Upstream gain staging
+// is untouched; this just drives the unit's dry/wet control.
+PioneerDDJFLX4.faderMixConnectionIds = [];
+
+PioneerDDJFLX4.applyFaderLinkedMix = function() {
+    for (let i = 0; i < PioneerDDJFLX4.faderMixConnectionIds.length; ++i) {
+        engine.disconnect(PioneerDDJFLX4.faderMixConnectionIds[i]);
+    }
+    PioneerDDJFLX4.faderMixConnectionIds = [];
+
+    if (!PioneerDDJFLX4.easyBeatFx()) {
+        for (let unit = 1; unit <= 3; ++unit) {
+            engine.setValue("[EffectRack1_EffectUnit" + unit + "]", "mix", 1.0);
+        }
+        return;
+    }
+
+    PioneerDDJFLX4.faderMixConnectionIds.push(
+            engine.makeConnection("[Channel1]", "volume", function(value) {
+                engine.setValue("[EffectRack1_EffectUnit1]", "mix", value);
+            }));
+    PioneerDDJFLX4.faderMixConnectionIds.push(
+            engine.makeConnection("[Channel2]", "volume", function(value) {
+                engine.setValue("[EffectRack1_EffectUnit2]", "mix", value);
+            }));
+
+    const updateSharedUnit = function() {
+        const gain1 = engine.getValue("[Channel1]", "volume");
+        const gain2 = engine.getValue("[Channel2]", "volume");
+        engine.setValue("[EffectRack1_EffectUnit3]", "mix", Math.max(gain1, gain2));
+    };
+    PioneerDDJFLX4.faderMixConnectionIds.push(
+            engine.makeConnection("[Channel1]", "volume", updateSharedUnit));
+    PioneerDDJFLX4.faderMixConnectionIds.push(
+            engine.makeConnection("[Channel2]", "volume", updateSharedUnit));
+
+    engine.setValue("[EffectRack1_EffectUnit1]", "mix",
+            engine.getValue("[Channel1]", "volume"));
+    engine.setValue("[EffectRack1_EffectUnit2]", "mix",
+            engine.getValue("[Channel2]", "volume"));
+    updateSharedUnit();
+};
+
+PioneerDDJFLX4.fxUnitGroup = function() {
+    return "[EffectRack1_EffectUnit" + PioneerDDJFLX4.fxUnit + "]";
+};
+
+PioneerDDJFLX4.focusedFxGroup = function() {
+    // Note the bracket position: the group name is
+    // [EffectRack1_EffectUnitN_EffectM], not [EffectRack1_EffectUnitN]_EffectM.
+    return "[EffectRack1_EffectUnit" + PioneerDDJFLX4.fxUnit + "_Effect1]";
+};
+
+// Optional escape hatch: expose the old focus behaviour for anyone who wants
+// the three-slot rack. Flip this to true to restore it.
+PioneerDDJFLX4.advancedFxRack = false;
+
 PioneerDDJFLX4.beatFxLevelDepthRotate = function(_channel, _control, value) {
+    const normalized = value / 0x7F;
+
     if (PioneerDDJFLX4.shiftButtonDown[0] || PioneerDDJFLX4.shiftButtonDown[1]) {
-        engine.softTakeoverIgnoreNextValue("[EffectRack1_EffectUnit1]", "mix");
-        engine.setParameter(PioneerDDJFLX4.focusedFxGroup(), "meta", value / 0x7F);
+        // Secondary: Echo/Delay feedback, for shaping the tail by hand.
+        engine.setParameter(PioneerDDJFLX4.focusedFxGroup(), "parameter2", normalized);
     } else {
-        engine.softTakeoverIgnoreNextValue(PioneerDDJFLX4.focusedFxGroup(), "meta");
-        engine.setParameter("[EffectRack1_EffectUnit1]", "mix", value / 0x7F);
+        // LEVEL/DEPTH drives the super knob of the effect slot (the knob next
+        // to the effect name in the rack), exactly like Rekordbox.
+        engine.setParameter(PioneerDDJFLX4.focusedFxGroup(), "meta", normalized);
     }
 };
 
 PioneerDDJFLX4.changeFocusedEffectBy = function(numberOfSteps) {
-    let focusedEffect = engine.getValue("[EffectRack1_EffectUnit1]", "focused_effect");
+    let focusedEffect = engine.getValue(PioneerDDJFLX4.fxUnitGroup(), "focused_effect");
 
     // Convert to zero-based index
     focusedEffect -= 1;
@@ -347,7 +451,7 @@ PioneerDDJFLX4.changeFocusedEffectBy = function(numberOfSteps) {
     // Convert back to one-based index
     focusedEffect += 1;
 
-    engine.setValue("[EffectRack1_EffectUnit1]", "focused_effect", focusedEffect);
+    engine.setValue(PioneerDDJFLX4.fxUnitGroup(), "focused_effect", focusedEffect);
 };
 
 PioneerDDJFLX4.beatFxSelectPressed = function(_channel, _control, value) {
@@ -362,16 +466,63 @@ PioneerDDJFLX4.beatFxSelectShiftPressed = function(_channel, _control, value) {
     engine.setValue(PioneerDDJFLX4.focusedFxGroup(), "prev_effect", value);
 };
 
+// BEAT </> adjust the focused effect's main parameter instead of moving the
+// focus between effect slots. Rekordbox uses these buttons for the beat
+// division of the active Beat FX, and on Mixxx that division lives in the
+// effect's first knob parameter (Echo/Delay: "Time" in beats).
+// Beat divisions for tempo-synced effects whose first knob parameter is a time
+// in beats. Mixxx's Echo/Delay expose "Time" as 0..2 beats mapped onto the
+// normalised 0..1 control value, so 1 beat == 0.5.
+//   1/16, 1/8, 1/4, 1/2, 3/4, 1, 1.5, 2 beats
+PioneerDDJFLX4.beatDivisions = [0.03125, 0.0625, 0.125, 0.25, 0.375, 0.5, 0.75, 1.0];
+
+PioneerDDJFLX4.stepFocusedEffectParameter = function(steps) {
+    const group = PioneerDDJFLX4.focusedFxGroup();
+    const loaded = engine.getValue(group, "parameter1_loaded");
+    // Mixxx's Echo rounds the delay to 1/4 beat and clamps it to 1/8 beat while
+    // Quantize is on, which makes 1/16 and 1/32 impossible. The beat ladder
+    // already gives exact musical values, so disable the rounding.
+    engine.setValue(group, "button_parameter1", 0);
+    const current = engine.getParameter(group, "parameter1");
+    const divisions = PioneerDDJFLX4.beatDivisions;
+
+    // Snap to the nearest division, then move one place.
+    let nearest = 0;
+    let nearestDistance = Infinity;
+    for (let i = 0; i < divisions.length; ++i) {
+        const distance = Math.abs(divisions[i] - current);
+        if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearest = i;
+        }
+    }
+
+    let index = nearest + (steps > 0 ? 1 : -1);
+    index = Math.min(divisions.length - 1, Math.max(0, index));
+    engine.setParameter(group, "parameter1", divisions[index]);
+};
+
 PioneerDDJFLX4.beatFxLeftPressed = function(_channel, _control, value) {
     if (value === 0) { return; }
 
-    PioneerDDJFLX4.changeFocusedEffectBy(-1);
+    // SHIFT keeps the original behaviour: move the focus to the previous slot.
+    if (!PioneerDDJFLX4.easyBeatFx()) {
+        PioneerDDJFLX4.changeFocusedEffectBy(-1);
+        return;
+    }
+
+    PioneerDDJFLX4.stepFocusedEffectParameter(-1);
 };
 
 PioneerDDJFLX4.beatFxRightPressed = function(_channel, _control, value) {
     if (value === 0) { return; }
 
-    PioneerDDJFLX4.changeFocusedEffectBy(1);
+    if (!PioneerDDJFLX4.easyBeatFx()) {
+        PioneerDDJFLX4.changeFocusedEffectBy(1);
+        return;
+    }
+
+    PioneerDDJFLX4.stepFocusedEffectParameter(1);
 };
 
 PioneerDDJFLX4.beatFxOnOffPressed = function(_channel, _control, value) {
@@ -384,30 +535,49 @@ PioneerDDJFLX4.beatFxOnOffPressed = function(_channel, _control, value) {
 PioneerDDJFLX4.beatFxOnOffShiftPressed = function(_channel, _control, value) {
     if (value === 0) { return; }
 
-    engine.setParameter("[EffectRack1_EffectUnit1]", "mix", 0);
-    engine.softTakeoverIgnoreNextValue("[EffectRack1_EffectUnit1]", "mix");
-
-    for (let i = 1; i <= 3; i++) {
-        engine.setValue("[EffectRack1_EffectUnit1_Effect" + i + "]", "enabled", 0);
-    }
+    // Kill the effect of the deck currently selected for Beat FX.
+    engine.setValue(PioneerDDJFLX4.focusedFxGroup(), "enabled", 0);
     PioneerDDJFLX4.toggleLight(PioneerDDJFLX4.lights.beatFx, false);
     PioneerDDJFLX4.toggleLight(PioneerDDJFLX4.lights.shiftBeatFx, false);
 };
 
-PioneerDDJFLX4.beatFxChannel1 = function(_channel, control, value, _status, group) {
-    let enableChannel = 0;
+// The CH SELECT switch has three positions: deck 1, deck 2 and both.
+// Unit 1 is deck 1's Beat FX, unit 2 deck 2's and unit 3 the shared one.
+PioneerDDJFLX4.fxChannel1Selected = false;
+PioneerDDJFLX4.fxChannel2Selected = false;
 
-    if (value === 0x7f) { enableChannel = 1; }
+PioneerDDJFLX4.applyFxChannelSelection = function() {
+    let unit;
+    if (PioneerDDJFLX4.fxChannel1Selected && PioneerDDJFLX4.fxChannel2Selected) {
+        unit = 3; // both decks
+    } else if (PioneerDDJFLX4.fxChannel2Selected) {
+        unit = 2;
+    } else {
+        unit = 1;
+    }
+    PioneerDDJFLX4.fxUnit = unit;
 
-    engine.setValue(group, "group_[Channel1]_enable", enableChannel);
+    if (unit === 3) {
+        // Switching to the shared unit takes both decks over, so the per-deck
+        // effects step aside automatically.
+        engine.setValue("[EffectRack1_EffectUnit1_Effect1]", "enabled", 0);
+        engine.setValue("[EffectRack1_EffectUnit2_Effect1]", "enabled", 0);
+    } else {
+        // Moving between deck 1 and deck 2 leaves the other deck's effect
+        // running - it is only disabled by hand. Leaving the shared unit turns
+        // that one off, since it belongs to the "both" position.
+        engine.setValue("[EffectRack1_EffectUnit3_Effect1]", "enabled", 0);
+    }
 };
 
-PioneerDDJFLX4.beatFxChannel2 = function(_channel, control, value, _status, group) {
-    let enableChannel = 0;
+PioneerDDJFLX4.beatFxChannel1 = function(_channel, _control, value) {
+    PioneerDDJFLX4.fxChannel1Selected = value !== 0;
+    PioneerDDJFLX4.applyFxChannelSelection();
+};
 
-    if (value === 0x7f) { enableChannel = 1; }
-
-    engine.setValue(group, "group_[Channel2]_enable", enableChannel);
+PioneerDDJFLX4.beatFxChannel2 = function(_channel, _control, value) {
+    PioneerDDJFLX4.fxChannel2Selected = value !== 0;
+    PioneerDDJFLX4.applyFxChannelSelection();
 };
 
 //
@@ -584,15 +754,27 @@ PioneerDDJFLX4.jogTurn = function(channel, _control, value, _status, group) {
 
 
 PioneerDDJFLX4.jogSearch = function(_channel, _control, value, _status, group) {
-    const newVal = (value - 64) * PioneerDDJFLX4.fastSeekScale;
-    engine.setValue(group, "jog", newVal);
+    // Move the playhead instead of bending the rate. Setting "jog" feeds
+    // RateControl as a temporary pitch change, which at high gain warps the
+    // audio and sounds like scratching.
+    const delta = (value - 64) * PioneerDDJFLX4.searchStep;
+    const position = engine.getValue(group, "playposition");
+    engine.setValue(group, "playposition", Math.min(1, Math.max(0, position + delta)));
 };
 
-PioneerDDJFLX4.jogTouch = function(channel, _control, value) {
+PioneerDDJFLX4.jogTouch = function(channel, control, value) {
     const deckNum = channel + 1;
 
     // skip while adjusting the loop points
     if (PioneerDDJFLX4.loopAdjustIn[channel] || PioneerDDJFLX4.loopAdjustOut[channel]) {
+        return;
+    }
+
+    // SHIFT + platter is a fast seek, so never engage the scratch engine.
+    // Some firmware sends a dedicated touch note (0x67) for this, others keep
+    // sending 0x36, so the shift button state is the reliable signal.
+    if (PioneerDDJFLX4.shiftButtonDown[channel] || control === 0x67) {
+        engine.scratchDisable(deckNum);
         return;
     }
 
@@ -609,6 +791,11 @@ PioneerDDJFLX4.jogTouch = function(channel, _control, value) {
 
 PioneerDDJFLX4.shiftPressed = function(channel, _control, value, _status, _group) {
     PioneerDDJFLX4.shiftButtonDown[channel] = value === 0x7F;
+    if (value === 0x7F) {
+        // Drop scratch mode if the platter was already grabbed, so SHIFT always
+        // means "seek", never "scratch".
+        engine.scratchDisable(channel + 1);
+    }
 };
 
 

@@ -71,7 +71,7 @@
                     <SizePolicy>min,me</SizePolicy>
                     <MinimunSize>30,20</MinimunSize>
                     <MaximumSize>38,</MaximumSize>
-                    <Text>FX&#8202;<Variable name="FxUnit"/></Text>
+                    <Text><Variable name="FxLabel"/></Text>
                     <Connection>
                       <ConfigKey>[<Variable name="FxRack_FxUnit"/>],controller_input_active</ConfigKey>
                       <BindProperty>highlight</BindProperty>

@@ -3,7 +3,7 @@
     <info>
         <name>Pioneer DDJ-FLX4</name>
         <author>Robert904</author>
-        <description>Midi Mapping for the Pioneer DDJ-FLX4 (based on DDJ-400 mapping)</description>
+        <description>Pioneer DDJ-FLX4 with four-stem pads, SHIFT+platter fast seek, and one Beat FX per deck plus a shared unit, selected with the three-position CH SELECT switch. Follows Preferences &gt; Effects &gt; Easy Beat FX.</description>
         <manual>pioneer_ddj_FLX4</manual>
         <forums>https://mixxx.discourse.group/t/pioneer-ddj-flx4</forums>
     </info>

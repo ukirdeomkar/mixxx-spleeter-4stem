@@ -66,36 +66,6 @@
             <Children/>
           </WidgetGroup>
 
-          <!-- Fx Slot 2 -->
-          <WidgetGroup>
-            <Layout>horizontal</Layout>
-            <SizePolicy>me,min</SizePolicy>
-            <MaximumSize>190,</MaximumSize>
-            <Children>
-              <SingletonContainer>
-                <ObjectName>FxUnit<Variable name="FxUnit"/>_FxSlotControls2</ObjectName>
-              </SingletonContainer>
-            </Children>
-          </WidgetGroup>
-
-          <WidgetGroup>
-            <ObjectName>FxFlowIndicatorCollapsed</ObjectName>
-            <Layout>horizontal</Layout>
-            <Children/>
-          </WidgetGroup>
-
-          <!-- Fx Slot 3 -->
-          <WidgetGroup>
-            <Layout>horizontal</Layout>
-            <SizePolicy>me,min</SizePolicy>
-            <MaximumSize>190,</MaximumSize>
-            <Children>
-              <SingletonContainer>
-                <ObjectName>FxUnit<Variable name="FxUnit"/>_FxSlotControls3</ObjectName>
-              </SingletonContainer>
-            </Children>
-          </WidgetGroup>
-
           <WidgetGroup>
             <ObjectName>FxMixerSeparatorCollapsed</ObjectName>
             <Layout>horizontal</Layout>
@@ -109,6 +79,18 @@
         <Layout>horizontal</Layout>
         <SizePolicy>max,min</SizePolicy>
         <Children>
+
+          <!-- Beat division of the first parameter (Echo/Delay: Time).
+               Shows e.g. "1/16" while stepping, so the value is visible even
+               though the whole parameter row is collapsed in easy mode. -->
+          <EffectParameterName>
+            <ObjectName>FxBeatDivision</ObjectName>
+            <SizePolicy>min,min</SizePolicy>
+            <EffectUnitGroup>[EffectRack1_EffectUnit<Variable name="FxUnit"/>]</EffectUnitGroup>
+            <Effect>1</Effect>
+            <EffectParameter>1</EffectParameter>
+            <ShowValue>true</ShowValue>
+          </EffectParameterName>
 
           <WidgetGroup><!-- Super knob, optional -->
             <Layout>horizontal</Layout>

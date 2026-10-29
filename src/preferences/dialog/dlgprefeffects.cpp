@@ -132,6 +132,9 @@ void DlgPrefEffects::slotUpdate() {
 
     loadChainPresetLists();
 
+    checkboxEasyBeatFx->setChecked(
+            m_pConfig->getValue(ConfigKey("[Effects]", "EasyBeatFx"), true));
+
     bool effectAdoptMetaknobValue = m_pConfig->getValue(
             ConfigKey("[Effects]", "AdoptMetaknobValue"), true);
     radioButtonKeepMetaknobPosition->setChecked(effectAdoptMetaknobValue);
@@ -144,6 +147,11 @@ void DlgPrefEffects::slotApply() {
 
     m_pConfig->set(ConfigKey("[Effects]", "AdoptMetaknobValue"),
             ConfigValue(radioButtonKeepMetaknobPosition->isChecked()));
+
+    // Setting the control object updates the config through EffectsManager and
+    // lets controller mappings react immediately.
+    ControlObject::set(ConfigKey("[Effects]", "EasyBeatFx"),
+            checkboxEasyBeatFx->isChecked() ? 1.0 : 0.0);
 }
 
 void DlgPrefEffects::saveChainPresetLists() {

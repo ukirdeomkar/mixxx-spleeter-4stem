@@ -1,6 +1,7 @@
 #include "widget/weffectparameternamebase.h"
 
 #include <QDrag>
+#include <QPair>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
@@ -12,8 +13,35 @@
 #include "util/dnd.h"
 #include "util/math.h"
 
+#include <cmath>
+
 namespace {
 const QString kMimeTextDelimiter = QStringLiteral("\n");
+
+/// Musical name for a duration expressed in beats, e.g. 0.25 -> "1/4".
+/// Beat-synced effects store their time as a plain number of beats, which is
+/// unreadable as "0.25" when what you want to see is the beat division.
+QString formatBeatDivision(double beats) {
+    static const QList<QPair<double, QString>> kDivisions = {
+            {1.0 / 32, QStringLiteral("1/32")},
+            {1.0 / 16, QStringLiteral("1/16")},
+            {1.0 / 8, QStringLiteral("1/8")},
+            {3.0 / 16, QStringLiteral("3/16")},
+            {1.0 / 4, QStringLiteral("1/4")},
+            {3.0 / 8, QStringLiteral("3/8")},
+            {1.0 / 2, QStringLiteral("1/2")},
+            {3.0 / 4, QStringLiteral("3/4")},
+            {1.0, QStringLiteral("1")},
+            {1.5, QStringLiteral("1 1/2")},
+            {2.0, QStringLiteral("2")},
+    };
+    for (const auto& division : kDivisions) {
+        if (std::abs(division.first - beats) < 1e-4) {
+            return division.second;
+        }
+    }
+    return QString();
+}
 } // anonymous namespace
 
 WEffectParameterNameBase::WEffectParameterNameBase(
@@ -51,11 +79,35 @@ void WEffectParameterNameBase::setEffectParameterSlot(
     parameterUpdated();
 }
 
+namespace {
+QString beatDivisionText(double beats) {
+    return formatBeatDivision(beats);
+}
+} // anonymous namespace
+
 void WEffectParameterNameBase::parameterUpdated() {
     int valueWidth = 0;
     QFontMetrics metrics(font());
     if (m_pParameterSlot) {
-        if (!m_pParameterSlot->shortName().isEmpty()) {
+        if (m_showValueOnly) {
+            auto* pKnobSlot = qobject_cast<EffectKnobParameterSlot*>(
+                    m_pParameterSlot.data());
+            const double value =
+                    pKnobSlot ? pKnobSlot->getValueParameter() : 0.0;
+            EffectManifestParameterPointer pManifest =
+                    m_pParameterSlot->getManifest();
+            const QString division =
+                    (pManifest &&
+                            pManifest->unitsHint() ==
+                                    EffectManifestParameter::UnitsHint::Beats)
+                    ? beatDivisionText(value)
+                    : QString();
+            // Always show a value: the musical division when the parameter is
+            // a time in beats, otherwise the plain number.
+            m_text = division.isEmpty()
+                    ? QString::number(value, 'g', 3)
+                    : division;
+        } else if (!m_pParameterSlot->shortName().isEmpty()) {
             m_text = m_pParameterSlot->shortName();
         } else {
             m_text = m_pParameterSlot->name();
@@ -101,6 +153,21 @@ void WEffectParameterNameBase::showNewValue(double newValue) {
         m_parameterUpdated = false;
         return;
     }
+    if (m_showValueOnly) {
+        EffectManifestParameterPointer pManifest =
+                m_pParameterSlot ? m_pParameterSlot->getManifest()
+                                 : EffectManifestParameterPointer();
+        const bool isBeatParameter = pManifest &&
+                pManifest->unitsHint() ==
+                        EffectManifestParameter::UnitsHint::Beats;
+        if (!isBeatParameter) {
+            // Non-beat effects (EQ, filter, ...) still show their value,
+            // persistently, just without a musical division.
+            setText(QString::number(newValue, 'g', 3));
+            return;
+        }
+    }
+
     int absVal = abs(static_cast<int>(round(newValue)));
     int tenPowDecimals = 1; // omit decimals
     if (absVal < 100) {     // 0-99: round to 2 decimals
@@ -109,6 +176,22 @@ void WEffectParameterNameBase::showNewValue(double newValue) {
         tenPowDecimals = 10;
     }
     double dispVal = round(newValue * tenPowDecimals) / tenPowDecimals;
+
+    if (m_pParameterSlot) {
+        EffectManifestParameterPointer pManifest = m_pParameterSlot->getManifest();
+        if (pManifest &&
+                pManifest->unitsHint() ==
+                        EffectManifestParameter::UnitsHint::Beats) {
+            const QString beatDivision = beatDivisionText(newValue);
+            if (!beatDivision.isEmpty()) {
+                setText(beatDivision);
+                if (!m_showValueOnly) {
+                    m_displayNameResetTimer.start();
+                }
+                return;
+            }
+        }
+    }
 
     setText(QString::number(dispVal) + m_unitString);
     m_displayNameResetTimer.start();

@@ -584,6 +584,26 @@
     </widget>
    </item>
 
+   <item>
+    <widget class="QGroupBox" name="groupBoxBeatFx">
+     <property name="title">
+      <string>Beat FX</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayoutBeatFx">
+      <item>
+       <widget class="QCheckBox" name="checkboxEasyBeatFx">
+        <property name="text">
+         <string>Easy mode: one effect per deck, parameters hidden (FLX4-style)</string>
+        </property>
+        <property name="toolTip">
+         <string>Uses one effect unit per deck with a single effect slot, hides the per-effect parameter controls and lets the controller channel buttons choose which deck the Beat FX controls act on. Turn this off for the classic multi-slot effect rack.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+
   </layout>
  </widget>
  <tabstops>
@@ -599,6 +619,7 @@
   <tabstop>chainPresetDeleteButton</tabstop>
   <tabstop>radioButtonKeepMetaknobPosition</tabstop>
   <tabstop>radioButtonMetaknobLoadDefault</tabstop>
+  <tabstop>checkboxEasyBeatFx</tabstop>
  </tabstops>
  <resources/>
  <buttongroups>

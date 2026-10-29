@@ -223,6 +223,16 @@ WSearchLineEdit::item:selected,
   qproperty-alignment: AlignCenter;
 }
 
+/* Beat FX division readout: always the value (e.g. 1/16), never the
+   parameter name, in bold white so it is readable on every scheme. */
+#FxBeatDivision {
+  font-size: 13px;
+  font-weight: bold;
+  color: #ffffff;
+  text-align: center;
+  qproperty-alignment: AlignCenter;
+}
+
 WPushButton,
 #LibraryFeatureControls QPushButton,
 #RecDuration[highlight="0"],

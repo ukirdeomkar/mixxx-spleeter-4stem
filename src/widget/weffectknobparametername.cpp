@@ -18,6 +18,7 @@ void WEffectKnobParameterName::setup(const QDomNode& node, const SkinContext& co
     m_pParameterSlot =
             EffectWidgetUtils::getParameterSlotFromNode(
                     node, context, m_pEffectSlot);
+    setShowValueOnly(context.selectBool(node, "ShowValue", false));
     VERIFY_OR_DEBUG_ASSERT(m_pParameterSlot) {
         SKIN_WARNING(node,
                 context,

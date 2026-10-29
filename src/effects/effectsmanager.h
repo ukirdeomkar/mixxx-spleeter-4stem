@@ -93,6 +93,7 @@ class EffectsManager {
     QSet<ChannelHandleAndGroup> m_registeredInputChannels;
     QSet<ChannelHandleAndGroup> m_registeredOutputChannels;
     UserSettingsPointer m_pConfig;
+    std::unique_ptr<ControlPushButton> m_pEasyBeatFxMode;
     QHash<QString, EffectChainPointer> m_effectChainSlotsByGroup;
 
     QList<StandardEffectChainPointer> m_standardEffectChains;
