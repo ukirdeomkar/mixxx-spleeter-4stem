@@ -217,6 +217,10 @@ and the last button switches between `DSP` (instant) and `AI` (Spleeter).
   summed before the deck effect chain. Mixxx 2.7's native stem playback has the
   routing and UI pattern to port — see [`docs/todo-stem-fx.md`](docs/todo-stem-fx.md)
   for the design, cost and pitfalls.
+- No video playback. Mixxx has never had it, so there are no VDJ-style video
+  decks; the bundled FFmpeg already decodes, but the video clock, output window
+  and sync layer would be new code. See [`docs/todo-video.md`](docs/todo-video.md)
+  for the scoped design, effort and hardware caveats.
 
 ## License
 
