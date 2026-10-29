@@ -213,6 +213,10 @@ and the last button switches between `DSP` (instant) and `AI` (Spleeter).
 - No Android APK. Android support exists only in Mixxx `main` (2.7-dev, QML UI),
   not in this 2.5.6 tree, and MIDI controllers are disabled there — so the FLX4
   would not work even after a port. See [`docs/todo-android.md`](docs/todo-android.md).
+- Stem FX (effects on one stem at a time) are not implemented: the four stems are
+  summed before the deck effect chain. Mixxx 2.7's native stem playback has the
+  routing and UI pattern to port — see [`docs/todo-stem-fx.md`](docs/todo-stem-fx.md)
+  for the design, cost and pitfalls.
 
 ## License
 
