@@ -19,10 +19,10 @@ of seconds after loading a track instead of waiting for the whole file.
 <!-- downloads:start -->
 | Platform | Build | Status |
 |---|---|---|
-| **macOS (Intel, 11+)** | [Mixxx-Stems-2.5.6-macOS-x86_64.dmg](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.1/Mixxx-Stems-2.5.6-macOS-x86_64.dmg) (207.5 MB) | built by CI |
-| **macOS (Apple Silicon, 11+)** | [Mixxx-Stems-2.5.6-macOS-arm64.dmg](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.1/Mixxx-Stems-2.5.6-macOS-arm64.dmg) (202.6 MB) | built by CI |
-| **Windows 10/11 (x64)** | [Mixxx-Stems-2.5.6-Windows-x64.zip](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.1/Mixxx-Stems-2.5.6-Windows-x64.zip) (231.1 MB) | built by CI, untested |
-| **Linux (Ubuntu 22.04+)** | [Mixxx-Stems-2.5.6-Linux-x86_64.deb](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.1/Mixxx-Stems-2.5.6-Linux-x86_64.deb) (166.2 MB) | built by CI, untested |
+| **macOS (Intel, 11+)** | [Mixxx-Stems-2.5.6-macOS-x86_64.dmg](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.2/Mixxx-Stems-2.5.6-macOS-x86_64.dmg) (207.5 MB) | built by CI |
+| **macOS (Apple Silicon, 11+)** | [Mixxx-Stems-2.5.6-macOS-arm64.dmg](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.2/Mixxx-Stems-2.5.6-macOS-arm64.dmg) (202.6 MB) | built by CI |
+| **Windows 10/11 (x64)** | [Mixxx-Stems-2.5.6-Windows-x64.zip](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.2/Mixxx-Stems-2.5.6-Windows-x64.zip) (231.1 MB) | built by CI, untested |
+| **Linux (Ubuntu 22.04+)** | [Mixxx-Stems-2.5.6-Linux-x86_64.deb](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases/download/v2.5.6-stems.2/Mixxx-Stems-2.5.6-Linux-x86_64.deb) (166.2 MB) | built by CI, untested |
 <!-- downloads:end -->
 
 All builds live under [Releases](https://github.com/ukirdeomkar/mixxx-spleeter-4stem/releases).
