@@ -1587,6 +1587,12 @@ QWidget* LegacySkinParser::parseLibrary(const QDomElement& node) {
                     BaseTrackTableModel::kApplyPlayedTrackColorDefault);
     BaseTrackTableModel::setApplyPlayedTrackColor(applyPlayedTrackColor);
 
+    const auto colorByKeyCompatibility =
+            m_pConfig->getValue(
+                    mixxx::library::prefs::kColorByKeyCompatibilityConfigKey,
+                    BaseTrackTableModel::kColorByKeyCompatibilityDefault);
+    BaseTrackTableModel::setColorByKeyCompatibility(colorByKeyCompatibility);
+
     // Connect Library search signals to the WLibrary
     connect(m_pLibrary,
             &Library::search,

@@ -6,9 +6,17 @@
 
          See https://developer.apple.com/documentation/security/app_sandbox for details.
       -->
-    <!-- Enable the App Sandbox -->
+    <!-- Enable the App Sandbox
+
+         Disabled for this fork: a sandboxed build cannot enumerate /Volumes
+         without a security-scoped bookmark, so the Rekordbox and Serato
+         features silently find no USB/SD devices (upstream issue #13624,
+         fix PR #16237 is still unmerged). Without the sandbox macOS asks for
+         removable-volume access once through the usual TCC prompt and the
+         device scan works, matching the behaviour of an unsigned local build.
+      -->
     <key>com.apple.security.app-sandbox</key>
-    <true/>
+    <false/>
     <!-- Allow access to the music directory -->
     <key>com.apple.security.assets.music.read-write</key>
     <true/>

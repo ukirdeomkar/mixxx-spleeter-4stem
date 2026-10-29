@@ -4,9 +4,11 @@
 #include <rekordbox_anlz.h>
 #include <rekordbox_pdb.h>
 
+#include <QApplication>
 #include <QDir>
 #include <QMap>
 #include <QMessageBox>
+#include <QProgressDialog>
 #include <QSettings>
 #include <QString>
 #include <QStringList>
@@ -688,10 +690,12 @@ void buildPlaylistTree(
         TreeItem* child = parent->appendChild(playlistItemName,
                 QVariant(QList<QString>{currentPath, IS_NOT_RECORDBOX_DEVICE}));
 
-        // Create a playlist for this child
+        // Create a playlist for this child. A path may already be present when
+        // the device is parsed twice (for example after re-plugging it), so
+        // ignore duplicates instead of aborting the whole tree.
         QSqlQuery queryInsertIntoPlaylist(database);
         queryInsertIntoPlaylist.prepare(
-                "INSERT INTO " + kRekordboxPlaylistsTable +
+                "INSERT OR IGNORE INTO " + kRekordboxPlaylistsTable +
                 " (name) "
                 "VALUES (:name)");
 
@@ -1510,6 +1514,39 @@ void RekordboxFeature::activate() {
     emit disableSearch();
 }
 
+void RekordboxFeature::showLoadingDialog() {
+    if (m_pLoadingDialog != nullptr) {
+        m_pLoadingDialog->raise();
+        return;
+    }
+    // Indeterminate progress without a cancel button: reading the database is
+    // a single background job that cannot be interrupted cheaply.
+    m_pLoadingDialog = new QProgressDialog(
+            tr("Reading the Rekordbox database from the device.\n"
+               "This can take a minute on a slow USB or SD drive."),
+            QString(),
+            0,
+            0,
+            qobject_cast<QWidget*>(parent()));
+    m_pLoadingDialog->setWindowTitle(tr("Rekordbox"));
+    m_pLoadingDialog->setWindowModality(Qt::NonModal);
+    m_pLoadingDialog->setCancelButton(nullptr);
+    m_pLoadingDialog->setMinimumDuration(0);
+    m_pLoadingDialog->setAutoClose(false);
+    m_pLoadingDialog->setAutoReset(false);
+    m_pLoadingDialog->setMinimumWidth(360);
+    m_pLoadingDialog->show();
+}
+
+void RekordboxFeature::hideLoadingDialog() {
+    if (m_pLoadingDialog == nullptr) {
+        return;
+    }
+    m_pLoadingDialog->close();
+    m_pLoadingDialog->deleteLater();
+    m_pLoadingDialog = nullptr;
+}
+
 void RekordboxFeature::activateChild(const QModelIndex& index) {
     if (!index.isValid()) {
         return;
@@ -1536,6 +1573,13 @@ void RekordboxFeature::activateChild(const QModelIndex& index) {
 
     if (doParseDeviceDB) {
         qDebug() << "Parse Rekordbox Device DB: " << playlist;
+
+        // Parsing the database of a Rekordbox USB/SD device copies every track
+        // into a local cache table and can take minutes on a slow drive. Show
+        // that work is happening instead of leaving the library looking frozen.
+        m_title = tr("(loading) Rekordbox");
+        emit featureIsLoading(this, false);
+        showLoadingDialog();
 
         // Let a worker thread do the XML parsing
         m_tracksFuture = QtConcurrent::run(parseDeviceDB, static_cast<Library*>(parent())->dbConnectionPool(), item);
@@ -1624,13 +1668,21 @@ void RekordboxFeature::onRekordboxDevicesFound() {
     }
 
     // calls a slot in the sidebarmodel such that 'isLoading' is removed from the feature title.
-    m_title = tr("Rekordbox");
+    // If nothing was found, say so instead of leaving an empty tree that looks broken.
+    m_title = foundDevices.empty() ? tr("Rekordbox (no device)") : tr("Rekordbox");
     emit featureLoadingFinished(this);
 }
 
 void RekordboxFeature::onTracksFound() {
     qDebug() << "onTracksFound";
     m_pSidebarModel->triggerRepaint();
+
+    // Clear the "(loading)" state set in activateChild(). Only the feature
+    // title is refreshed here; featureLoadingFinished() would also re-select
+    // the sidebar root and pull the user out of the playlist tree.
+    hideLoadingDialog();
+    m_title = tr("Rekordbox");
+    emit featureIsLoading(this, false);
 
     QString devicePlaylist;
     try {

@@ -133,6 +133,20 @@ class KeyUtils {
     static int keyToCircleOfFifthsOrder(mixxx::track::io::key::ChromaticKey key,
                                         KeyNotation notation);
 
+    /// Relationship between two keys on the Camelot wheel, the harmonic
+    /// mixing notation used by Rekordbox, Serato and VirtualDJ.
+    enum class KeyCompatibility {
+        None,      ///< Not harmonically related
+        Same,      ///< Identical key
+        Relative,  ///< Same Camelot number, other mode (8A <-> 8B)
+        Neighbour, ///< Adjacent on the wheel, same mode (8A <-> 9A)
+    };
+
+    /// Compatibility of @a key with the key of the track currently playing.
+    static KeyCompatibility keyCompatibility(
+            mixxx::track::io::key::ChromaticKey reference,
+            mixxx::track::io::key::ChromaticKey key);
+
     static QVariant keyFromKeyTextAndIdFields(
             const QVariant& keyTextField, const QVariant& keyIdField);
     static QString keyFromKeyTextAndIdValues(const QString& keyText,

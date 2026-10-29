@@ -14,6 +14,8 @@
 #include <QFuture>
 #include <QFutureWatcher>
 
+class QProgressDialog;
+
 #include "library/baseexternallibraryfeature.h"
 #include "util/parented_ptr.h"
 
@@ -44,6 +46,9 @@ class SeratoFeature : public BaseExternalLibraryFeature {
     void htmlLinkClicked(const QUrl& link);
 
   private:
+    void showLoadingDialog();
+    void hideLoadingDialog();
+
     QString formatRootViewHtml() const;
     std::unique_ptr<BaseSqlTableModel> createPlaylistModelForPlaylist(
             const QVariant& data) override;
@@ -55,6 +60,7 @@ class SeratoFeature : public BaseExternalLibraryFeature {
     QFuture<QList<TreeItem*>> m_databasesFuture;
     QFutureWatcher<QString> m_tracksFutureWatcher;
     QFuture<QString> m_tracksFuture;
+    QProgressDialog* m_pLoadingDialog = nullptr;
     QString m_title;
 
     QSharedPointer<BaseTrackCache> m_trackSource;

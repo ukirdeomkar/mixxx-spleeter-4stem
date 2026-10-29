@@ -1,7 +1,9 @@
 #include "library/serato/seratofeature.h"
 
+#include <QApplication>
 #include <QBuffer>
 #include <QMap>
+#include <QProgressDialog>
 #include <QStandardPaths>
 #include <QTextCodec>
 #include <QtConcurrentRun>
@@ -1016,6 +1018,37 @@ void SeratoFeature::activate() {
     emit disableSearch();
 }
 
+void SeratoFeature::showLoadingDialog() {
+    if (m_pLoadingDialog != nullptr) {
+        m_pLoadingDialog->raise();
+        return;
+    }
+    m_pLoadingDialog = new QProgressDialog(
+            tr("Reading the Serato database from the device.\n"
+               "This can take a minute on a slow drive."),
+            QString(),
+            0,
+            0,
+            qobject_cast<QWidget*>(parent()));
+    m_pLoadingDialog->setWindowTitle(tr("Serato"));
+    m_pLoadingDialog->setWindowModality(Qt::NonModal);
+    m_pLoadingDialog->setCancelButton(nullptr);
+    m_pLoadingDialog->setMinimumDuration(0);
+    m_pLoadingDialog->setAutoClose(false);
+    m_pLoadingDialog->setAutoReset(false);
+    m_pLoadingDialog->setMinimumWidth(360);
+    m_pLoadingDialog->show();
+}
+
+void SeratoFeature::hideLoadingDialog() {
+    if (m_pLoadingDialog == nullptr) {
+        return;
+    }
+    m_pLoadingDialog->close();
+    m_pLoadingDialog->deleteLater();
+    m_pLoadingDialog = nullptr;
+}
+
 void SeratoFeature::activateChild(const QModelIndex& index) {
     if (!index.isValid()) {
         return;
@@ -1044,6 +1077,12 @@ void SeratoFeature::activateChild(const QModelIndex& index) {
     qDebug() << "SeratoFeature::activateChild " << item->getLabel();
 
     if (!isPlaylist) {
+        // Parsing a Serato database copies every track into a local cache table
+        // and can take a while, so show that work is in progress.
+        m_title = tr("(loading) Serato");
+        emit featureIsLoading(this, false);
+        showLoadingDialog();
+
         // Let a worker thread do the parsing
         m_tracksFuture = QtConcurrent::run(parseDatabase, static_cast<Library*>(parent())->dbConnectionPool(), item);
         m_tracksFutureWatcher.setFuture(m_tracksFuture);
@@ -1116,13 +1155,21 @@ void SeratoFeature::onSeratoDatabasesFound() {
     }
 
     // calls a slot in the sidebarmodel such that 'isLoading' is removed from the feature title.
-    m_title = tr("Serato");
+    // If nothing was found, say so instead of leaving an empty tree that looks broken.
+    m_title = foundDatabases.empty() ? tr("Serato (no database)") : tr("Serato");
     emit featureLoadingFinished(this);
 }
 
 void SeratoFeature::onTracksFound() {
     qDebug() << "onTracksFound";
     m_pSidebarModel->triggerRepaint();
+
+    // Clear the "(loading)" state set in activateChild(). Only the feature
+    // title is refreshed here; featureLoadingFinished() would also re-select
+    // the sidebar root and pull the user out of the playlist tree.
+    hideLoadingDialog();
+    m_title = tr("Serato");
+    emit featureIsLoading(this, false);
 
     QString databasePlaylist = m_tracksFuture.result();
 

@@ -218,8 +218,39 @@ mixxx::track::io::key::ChromaticKey incrementKey(
         static_cast<int>(key) + steps);
 }
 
-TEST_F(KeyUtilsTest, ShortestStepsToKey_EqualKeyZeroSteps) {
-    mixxx::track::io::key::ChromaticKey key = mixxx::track::io::key::INVALID;
+TEST_F(KeyUtilsTest, KeyCompatibility) {
+    using Compatibility = KeyUtils::KeyCompatibility;
+    using mixxx::track::io::key::A_MINOR;
+    using mixxx::track::io::key::B_MAJOR;
+    using mixxx::track::io::key::C_MAJOR;
+    using mixxx::track::io::key::E_MAJOR;
+    using mixxx::track::io::key::F_MAJOR;
+    using mixxx::track::io::key::G_MAJOR;
+    using mixxx::track::io::key::INVALID;
+
+    // Identical keys.
+    EXPECT_EQ(Compatibility::Same, KeyUtils::keyCompatibility(C_MAJOR, C_MAJOR));
+    EXPECT_EQ(Compatibility::Same, KeyUtils::keyCompatibility(A_MINOR, A_MINOR));
+
+    // Relative major/minor share a Camelot number: C major 8B, A minor 8A.
+    EXPECT_EQ(Compatibility::Relative, KeyUtils::keyCompatibility(C_MAJOR, A_MINOR));
+    EXPECT_EQ(Compatibility::Relative, KeyUtils::keyCompatibility(A_MINOR, C_MAJOR));
+
+    // Neighbours on the wheel: C major 8B, G major 9B, F major 7B.
+    EXPECT_EQ(Compatibility::Neighbour, KeyUtils::keyCompatibility(C_MAJOR, G_MAJOR));
+    EXPECT_EQ(Compatibility::Neighbour, KeyUtils::keyCompatibility(C_MAJOR, F_MAJOR));
+    // The wheel wraps: E major is 12B and B major is 1B.
+    EXPECT_EQ(Compatibility::Neighbour, KeyUtils::keyCompatibility(E_MAJOR, B_MAJOR));
+
+    // Too far apart to be mixable: C major 8B vs E major 11B.
+    EXPECT_EQ(Compatibility::None, KeyUtils::keyCompatibility(C_MAJOR, E_MAJOR));
+
+    // Unknown keys never match.
+    EXPECT_EQ(Compatibility::None, KeyUtils::keyCompatibility(INVALID, C_MAJOR));
+    EXPECT_EQ(Compatibility::None, KeyUtils::keyCompatibility(C_MAJOR, INVALID));
+}
+
+TEST_F(KeyUtilsTest, ShortestStepsToKey_EqualKeyZeroSteps) {    mixxx::track::io::key::ChromaticKey key = mixxx::track::io::key::INVALID;
     while (true) {
         EXPECT_EQ(0, KeyUtils::shortestStepsToKey(key, key));
         if (key == mixxx::track::io::key::B_MINOR) {

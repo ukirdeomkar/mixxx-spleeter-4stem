@@ -248,6 +248,8 @@ void DlgPrefLibrary::slotResetToDefaults() {
     spinbox_bpm_precision->setValue(BaseTrackTableModel::kBpmColumnPrecisionDefault);
     checkbox_played_track_color->setChecked(
             BaseTrackTableModel::kApplyPlayedTrackColorDefault);
+    checkbox_key_color_compatibility->setChecked(
+            BaseTrackTableModel::kColorByKeyCompatibilityDefault);
 
     radioButton_cover_art_fetcher_medium->setChecked(true);
 
@@ -383,6 +385,12 @@ void DlgPrefLibrary::slotUpdate() {
                     mixxx::library::prefs::kApplyPlayedTrackColorConfigKey,
                     BaseTrackTableModel::kApplyPlayedTrackColorDefault);
     checkbox_played_track_color->setChecked(applyPlayedTrackColor);
+
+    const auto colorByKeyCompatibility =
+            m_pConfig->getValue(
+                    mixxx::library::prefs::kColorByKeyCompatibilityConfigKey,
+                    BaseTrackTableModel::kColorByKeyCompatibilityDefault);
+    checkbox_key_color_compatibility->setChecked(colorByKeyCompatibility);
 }
 
 void DlgPrefLibrary::slotCancel() {
@@ -593,6 +601,12 @@ void DlgPrefLibrary::slotApply() {
     m_pConfig->set(
             mixxx::library::prefs::kApplyPlayedTrackColorConfigKey,
             ConfigValue(checkbox_played_track_color->isChecked()));
+
+    BaseTrackTableModel::setColorByKeyCompatibility(
+            checkbox_key_color_compatibility->isChecked());
+    m_pConfig->set(
+            mixxx::library::prefs::kColorByKeyCompatibilityConfigKey,
+            ConfigValue(checkbox_key_color_compatibility->isChecked()));
 
     // TODO(rryan): Don't save here.
     m_pConfig->save();

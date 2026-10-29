@@ -219,6 +219,10 @@ void ColumnCache::setColumns(QStringList columns) {
     }
 
     m_columnSortByIndex.clear();
+    // External library tables carry the key as text without the numeric
+    // "key_id" column used for the circle-of-fifths sort below.
+    m_hasKeyIdColumn =
+            m_columnIndexByName.contains(LIBRARYTABLE_KEY + QStringLiteral("_id"));
     // Add the columns that requires a special sort
     insertColumnSortByEnum(COLUMN_LIBRARYTABLE_ARTIST, kSortNoCaseLex);
     insertColumnSortByEnum(COLUMN_LIBRARYTABLE_TITLE, kSortNoCaseLex);
@@ -247,6 +251,15 @@ void ColumnCache::slotSetKeySortOrder(double notationValue) {
     }
     const int keyColumnIndex = m_columnIndexByEnum[COLUMN_LIBRARYTABLE_KEY];
     if (keyColumnIndex < 0) {
+        return;
+    }
+
+    if (!m_hasKeyIdColumn) {
+        // Sorting by the CASE expression below requires the numeric "key_id"
+        // column. External library tables (Rekordbox, Serato) only have the
+        // textual "key" column, so the prepared statement would fail and the
+        // view would end up empty. Fall back to plain text ordering instead.
+        m_columnSortByIndex.remove(keyColumnIndex);
         return;
     }
 

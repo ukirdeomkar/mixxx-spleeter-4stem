@@ -26,6 +26,8 @@
 
 #include <QFuture>
 #include <QFutureWatcher>
+
+class QProgressDialog;
 #include <QStringListModel>
 #include <QtConcurrentRun>
 #include <fstream>
@@ -77,6 +79,9 @@ class RekordboxFeature : public BaseExternalLibraryFeature {
     void htmlLinkClicked(const QUrl& link);
 
   private:
+    void showLoadingDialog();
+    void hideLoadingDialog();
+
     QString formatRootViewHtml() const;
     std::unique_ptr<BaseSqlTableModel> createPlaylistModelForPlaylist(
             const QVariant& data) override;
@@ -88,6 +93,7 @@ class RekordboxFeature : public BaseExternalLibraryFeature {
     QFuture<QList<TreeItem*>> m_devicesFuture;
     QFutureWatcher<QString> m_tracksFutureWatcher;
     QFuture<QString> m_tracksFuture;
+    QProgressDialog* m_pLoadingDialog = nullptr;
     QString m_title;
 
     QSharedPointer<BaseTrackCache> m_trackSource;

@@ -5,6 +5,10 @@
 #include <QRegularExpression>
 #include <QtDebug>
 
+#include <algorithm>
+#include <cmath>
+#include <utility>
+
 #include "preferences/keydetectionsettings.h"
 #include "util/compatibility/qmutex.h"
 
@@ -784,6 +788,49 @@ int KeyUtils::keyToCircleOfFifthsOrder(mixxx::track::io::key::ChromaticKey key,
     } else {
         return s_sortKeysCircleOfFifthsLancelot[static_cast<int>(key)];
     }
+}
+
+// static
+KeyUtils::KeyCompatibility KeyUtils::keyCompatibility(
+        ChromaticKey reference, ChromaticKey key) {
+    if (!ChromaticKey_IsValid(reference) || !ChromaticKey_IsValid(key) ||
+            reference == mixxx::track::io::key::INVALID ||
+            key == mixxx::track::io::key::INVALID) {
+        return KeyCompatibility::None;
+    }
+
+    // Map both keys onto the Camelot wheel. Minor keys share their number with
+    // the relative major, which is what makes "8A <-> 8B" a relative change.
+    const auto camelot = [](ChromaticKey chromaticKey) {
+        const int tonic = keyToTonic(chromaticKey); // 0 == C
+        const bool major = keyIsMajor(chromaticKey);
+        const int majorTonic = major ? tonic : (tonic + 3) % 12;
+        // Ascending fifths: C, G, D, A, E, B, F#, C#, G#, D#, A#, F.
+        const int fifths = (majorTonic * 7) % 12;
+        // C major is 8B, so the wheel is the fifths index shifted by seven.
+        const int number = ((fifths + 7) % 12) + 1;
+        return std::pair<int, bool>(number, major);
+    };
+
+    const auto referencePosition = camelot(reference);
+    const auto keyPosition = camelot(key);
+
+    if (referencePosition.first == keyPosition.first) {
+        return referencePosition.second == keyPosition.second
+                ? KeyCompatibility::Same
+                : KeyCompatibility::Relative;
+    }
+
+    if (referencePosition.second == keyPosition.second) {
+        const int rawDistance =
+                std::abs(referencePosition.first - keyPosition.first);
+        const int distance = std::min(rawDistance, 12 - rawDistance);
+        if (distance == 1) {
+            return KeyCompatibility::Neighbour;
+        }
+    }
+
+    return KeyCompatibility::None;
 }
 
 // static

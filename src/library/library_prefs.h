@@ -30,6 +30,8 @@ extern const ConfigKey kBpmColumnPrecisionConfigKey;
 
 extern const ConfigKey kApplyPlayedTrackColorConfigKey;
 
+extern const ConfigKey kColorByKeyCompatibilityConfigKey;
+
 extern const ConfigKey kEditMetadataSelectedClickConfigKey;
 
 extern const ConfigKey kHistoryMinTracksToKeepConfigKey;

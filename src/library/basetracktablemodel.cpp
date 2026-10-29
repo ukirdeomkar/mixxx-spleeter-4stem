@@ -1,6 +1,7 @@
 #include "library/basetracktablemodel.h"
 
 #include <QBuffer>
+#include <QApplication>
 #include <QGuiApplication>
 #include <QMimeData>
 #include <QScreen>
@@ -95,6 +96,93 @@ void BaseTrackTableModel::setApplyPlayedTrackColor(bool apply) {
     s_bApplyPlayedTrackColor = apply;
 }
 
+bool BaseTrackTableModel::s_bColorByKeyCompatibility =
+        BaseTrackTableModel::kColorByKeyCompatibilityDefault;
+
+mixxx::track::io::key::ChromaticKey BaseTrackTableModel::s_currentPlayingKey =
+        mixxx::track::io::key::INVALID;
+
+void BaseTrackTableModel::setColorByKeyCompatibility(bool apply) {
+    if (s_bColorByKeyCompatibility == apply) {
+        return;
+    }
+    s_bColorByKeyCompatibility = apply;
+    refreshKeyColumnColors();
+}
+
+void BaseTrackTableModel::refreshKeyColumnColors() {
+    // Only called when the playing track or the preference changes, so the
+    // cost of walking the widget tree does not matter.
+    const auto widgets = QApplication::allWidgets();
+    for (auto* pWidget : widgets) {
+        auto* pTrackTable = qobject_cast<WTrackTableView*>(pWidget);
+        if (pTrackTable != nullptr) {
+            pTrackTable->viewport()->update();
+        }
+    }
+}
+
+void BaseTrackTableModel::slotCurrentPlayingTrackChanged(TrackPointer pTrack) {
+    const auto key =
+            pTrack ? pTrack->getKey() : mixxx::track::io::key::INVALID;
+    if (s_currentPlayingKey == key) {
+        return;
+    }
+    s_currentPlayingKey = key;
+    refreshKeyColumnColors();
+}
+
+QVariant BaseTrackTableModel::keyCompatibilityBrush(const QModelIndex& index) const {
+    if (!s_bColorByKeyCompatibility) {
+        return QVariant();
+    }
+    if (index.column() != fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_KEY)) {
+        return QVariant();
+    }
+    if (!mixxx::track::io::key::ChromaticKey_IsValid(s_currentPlayingKey) ||
+            s_currentPlayingKey == mixxx::track::io::key::INVALID) {
+        return QVariant();
+    }
+
+    // Prefer the numeric key of the internal library, fall back to parsing the
+    // text column that external libraries (Rekordbox, Serato) provide.
+    auto rowKey = mixxx::track::io::key::INVALID;
+    const QVariant keyIdValue =
+            rawSiblingValue(index, ColumnCache::COLUMN_LIBRARYTABLE_KEY_ID);
+    if (keyIdValue.isValid() && keyIdValue.canConvert<int>()) {
+        rowKey = KeyUtils::keyFromNumericValue(keyIdValue.toInt());
+    }
+    if (rowKey == mixxx::track::io::key::INVALID) {
+        rowKey = KeyUtils::guessKeyFromText(
+                rawSiblingValue(index, ColumnCache::COLUMN_LIBRARYTABLE_KEY)
+                        .toString());
+    }
+    if (rowKey == mixxx::track::io::key::INVALID) {
+        return QVariant();
+    }
+
+    // Traffic-light colours matching the harmonic-mixing convention:
+    // green = same key, blue = adjacent on the wheel, amber = relative mode.
+    constexpr double kKeyColorOpacity = 0.45;
+    QColor color;
+    switch (KeyUtils::keyCompatibility(s_currentPlayingKey, rowKey)) {
+    case KeyUtils::KeyCompatibility::Same:
+        color = QColor(0x4c, 0xaf, 0x50);
+        break;
+    case KeyUtils::KeyCompatibility::Neighbour:
+        color = QColor(0x21, 0x96, 0xf3);
+        break;
+    case KeyUtils::KeyCompatibility::Relative:
+        color = QColor(0xff, 0xa0, 0x00);
+        break;
+    case KeyUtils::KeyCompatibility::None:
+    default:
+        return QVariant();
+    }
+    color.setAlphaF(kKeyColorOpacity);
+    return QBrush(color);
+}
+
 BaseTrackTableModel::BaseTrackTableModel(
         QObject* parent,
         TrackCollectionManager* pTrackCollectionManager,
@@ -114,6 +202,10 @@ BaseTrackTableModel::BaseTrackTableModel(
             &PlayerInfo::trackChanged,
             this,
             &BaseTrackTableModel::slotTrackChanged);
+    connect(&PlayerInfo::instance(),
+            &PlayerInfo::currentPlayingTrackChanged,
+            this,
+            &BaseTrackTableModel::slotCurrentPlayingTrackChanged);
     CoverArtCache* pCache = CoverArtCache::instance();
     if (pCache) {
         connect(pCache,
@@ -367,6 +459,10 @@ QVariant BaseTrackTableModel::data(
     }
 
     if (role == Qt::BackgroundRole) {
+        const QVariant keyColor = keyCompatibilityBrush(index);
+        if (keyColor.isValid()) {
+            return keyColor;
+        }
         const auto rgbColorValue = rawSiblingValue(
                 index,
                 ColumnCache::COLUMN_LIBRARYTABLE_COLOR);

@@ -296,4 +296,23 @@ class BaseTrackTableModel : public QAbstractTableModel, public TrackModel {
     static int s_bpmColumnPrecision;
 
     static bool s_bApplyPlayedTrackColor;
+
+    QVariant keyCompatibilityBrush(const QModelIndex& index) const;
+
+  public:
+    /// Colour the key column by how well each track harmonises with the track
+    /// that is currently playing, like the Rekordbox traffic light.
+    static constexpr bool kColorByKeyCompatibilityDefault = true;
+    static void setColorByKeyCompatibility(bool apply);
+    static bool colorByKeyCompatibility() {
+        return s_bColorByKeyCompatibility;
+    }
+
+  private slots:
+    void slotCurrentPlayingTrackChanged(TrackPointer pTrack);
+
+  private:
+    static bool s_bColorByKeyCompatibility;
+    static mixxx::track::io::key::ChromaticKey s_currentPlayingKey;
+    static void refreshKeyColumnColors();
 };

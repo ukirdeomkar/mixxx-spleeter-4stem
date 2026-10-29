@@ -287,6 +287,17 @@
        </widget>
       </item>
 
+      <item row="11" column="0" colspan="3">
+       <widget class="QCheckBox" name="checkbox_key_color_compatibility">
+        <property name="text">
+         <string>Colour tracks by key compatibility with the playing track</string>
+        </property>
+        <property name="toolTip">
+         <string>Highlights the key of tracks that harmonically mix with the track that is currently playing: green for the same key, blue for a neighbouring key and amber for the relative major/minor.</string>
+        </property>
+       </widget>
+      </item>
+
      </layout>
     </widget>
    </item><!-- Track Table View -->
@@ -683,6 +694,7 @@
   <tabstop>btn_library_font</tabstop>
   <tabstop>spinbox_bpm_precision</tabstop>
   <tabstop>checkbox_played_track_color</tabstop>
+  <tabstop>checkbox_key_color_compatibility</tabstop>
   <tabstop>spinBox_search_debouncing_timeout</tabstop>
   <tabstop>checkBox_enable_search_completions</tabstop>
   <tabstop>checkBox_enable_search_history_shortcuts</tabstop>

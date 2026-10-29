@@ -131,6 +131,9 @@ class ColumnCache : public QObject {
 
     QStringList m_columnsByIndex;
     QMap<int, QString> m_columnSortByIndex;
+    // External libraries (Rekordbox, Serato) expose the key as text only and
+    // have no "key_id" column. The circle-of-fifths sort clause below needs it.
+    bool m_hasKeyIdColumn = false;
     QMap<QString, int> m_columnIndexByName;
     // A mapping from column enum to logical index.
     // Columns in the enums but not in the table are marked by -1
