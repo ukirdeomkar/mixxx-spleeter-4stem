@@ -78,10 +78,6 @@ class EngineRecord : public QObject, public EncoderCallback, public SideChainWor
 
     PollingControlProxy m_sampleRateControl;
     ControlProxy* m_pRecReady;
-    // Controls used to detect whether any deck is playing. Recording is armed
-    // when the user presses Record, but audio is only actually captured once a
-    // deck starts playing (Rekordbox-like behavior).
-    ControlProxy* m_pPlayIndicator[kMaxNumberOfDecks];
     quint64 m_frames;
     mixxx::audio::SampleRate m_sampleRate;
     quint64 m_recordedDuration;

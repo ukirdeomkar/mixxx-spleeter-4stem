@@ -69,9 +69,12 @@ QString RecordingManager::formatDateTimeForFilename(const QDateTime& dateTime) c
 }
 
 void RecordingManager::slotSetRecording(bool recording) {
-    if (recording && !isRecordingActive()) {
-        startRecording();
-    } else if (!recording && isRecordingActive()) {
+    if (recording) {
+        if (m_pCoRecStatus->get() == RECORD_OFF) {
+            startRecording();
+        }
+    } else if (m_pCoRecStatus->get() != RECORD_OFF) {
+        // Also cancels an armed recorder that has not started capturing yet.
         stopRecording();
     }
 }
@@ -79,7 +82,10 @@ void RecordingManager::slotSetRecording(bool recording) {
 void RecordingManager::slotToggleRecording(double value) {
     bool toggle = static_cast<bool>(value);
     if (toggle) {
-        if (isRecordingActive()) {
+        // RECORD_READY (armed, no deck playing yet) is not "active" in the
+        // sense of isRecordingActive(), but pressing Record again must cancel
+        // it instead of re-arming.
+        if (m_pCoRecStatus->get() != RECORD_OFF) {
             stopRecording();
         } else {
             startRecording();

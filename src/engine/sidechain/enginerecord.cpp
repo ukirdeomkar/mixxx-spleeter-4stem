@@ -1,5 +1,6 @@
 #include "engine/sidechain/enginerecord.h"
 
+#include "control/control.h"
 #include "control/controlproxy.h"
 #include "encoder/encoder.h"
 #include "mixer/playerinfo.h"
@@ -21,17 +22,6 @@ EngineRecord::EngineRecord(UserSettingsPointer pConfig)
           m_bCueIsEnabled(false) {
     m_pRecReady = new ControlProxy(RECORDING_PREF_KEY, "status", this);
     m_sampleRate = mixxx::audio::SampleRate::fromDouble(m_sampleRateControl.get());
-
-    // Create play indicator controls for each deck. Controls for decks that are
-    // not configured (e.g. fewer than kMaxNumberOfDecks) are missing/invalid and
-    // safely read back as 0.0 (not playing).
-    for (int i = 0; i < kMaxNumberOfDecks; ++i) {
-        m_pPlayIndicator[i] = new ControlProxy(
-                QStringLiteral("[Channel%1]").arg(i + 1),
-                QStringLiteral("play_indicator"),
-                this,
-                ControlFlag::AllowMissingOrInvalid);
-    }
 }
 
 EngineRecord::~EngineRecord() {
@@ -119,8 +109,17 @@ bool EngineRecord::metaDataHasChanged()
 }
 
 bool EngineRecord::isAnyDeckPlaying() const {
-    for (int i = 0; i < kMaxNumberOfDecks; ++i) {
-        if (m_pPlayIndicator[i] && m_pPlayIndicator[i]->toBool()) {
+    // Resolve the deck controls on demand instead of binding ControlProxies in
+    // the constructor: EngineRecord is created by RecordingManager before
+    // PlayerManager creates the decks, so a proxy built here would fall back to
+    // the dummy default control and read 0 forever. NoWarnIfMissing keeps
+    // unconfigured decks (e.g. a 2-deck setup) quiet.
+    for (int i = 1; i <= kMaxNumberOfDecks; ++i) {
+        const auto pPlayIndicator = ControlDoublePrivate::getControl(
+                ConfigKey(QStringLiteral("[Channel%1]").arg(i),
+                        QStringLiteral("play_indicator")),
+                ControlFlag::NoWarnIfMissing);
+        if (pPlayIndicator && pPlayIndicator->get() != 0.0) {
             return true;
         }
     }
