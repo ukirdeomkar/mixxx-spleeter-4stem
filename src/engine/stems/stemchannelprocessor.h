@@ -35,6 +35,11 @@ class StemChannelProcessor : public QObject {
     void slotTrackLoaded(TrackPointer pNewTrack, TrackPointer pOldTrack);
 
   private:
+    // Unmute all stems, restore unity gain and release any latched solo.
+    // Used by the explicit reset control and whenever a new track is loaded,
+    // so a freshly loaded track never inherits the previous stem mix.
+    void resetStemMix();
+
     QString m_group;
     EngineBuffer* m_pEngineBuffer;
 

@@ -141,16 +141,26 @@ void StemChannelProcessor::slotSoloInst(double v) {
     }
 }
 
+void StemChannelProcessor::resetStemMix() {
+    m_pStemVocalsEnabled->set(1.0);
+    m_pStemDrumsEnabled->set(1.0);
+    m_pStemBassEnabled->set(1.0);
+    m_pStemInstEnabled->set(1.0);
+    m_pStemVocalsVolume->set(1.0);
+    m_pStemDrumsVolume->set(1.0);
+    m_pStemBassVolume->set(1.0);
+    m_pStemInstVolume->set(1.0);
+    // Solos latch by muting every other stem, so clearing the solo buttons is
+    // part of a clean reset even though the buttons are momentary.
+    m_pStemVocalsSolo->set(0.0);
+    m_pStemDrumsSolo->set(0.0);
+    m_pStemBassSolo->set(0.0);
+    m_pStemInstSolo->set(0.0);
+}
+
 void StemChannelProcessor::slotResetStems(double v) {
     if (v > 0.0) {
-        m_pStemVocalsEnabled->set(1.0);
-        m_pStemDrumsEnabled->set(1.0);
-        m_pStemBassEnabled->set(1.0);
-        m_pStemInstEnabled->set(1.0);
-        m_pStemVocalsVolume->set(1.0);
-        m_pStemDrumsVolume->set(1.0);
-        m_pStemBassVolume->set(1.0);
-        m_pStemInstVolume->set(1.0);
+        resetStemMix();
     }
 }
 
@@ -177,6 +187,11 @@ void StemChannelProcessor::slotTrackLoaded(TrackPointer pNewTrack, TrackPointer 
     m_pStemsStatus->set(0.0);
 
     if (pNewTrack) {
+        // A new track must not inherit the previous track's stem mix (muted
+        // stems, gains, latched solo). Reset before separation starts so the
+        // first audible buffer is already the clean mix.
+        resetStemMix();
+
         // 1. Instant load from disk cache if this track was previously separated
         if (StemCache::hasCachedStems(pNewTrack)) {
             if (StemCache::loadFromCache(pNewTrack, m_pStemTrackBuffer.get())) {
