@@ -21,6 +21,17 @@ EngineRecord::EngineRecord(UserSettingsPointer pConfig)
           m_bCueIsEnabled(false) {
     m_pRecReady = new ControlProxy(RECORDING_PREF_KEY, "status", this);
     m_sampleRate = mixxx::audio::SampleRate::fromDouble(m_sampleRateControl.get());
+
+    // Create play indicator controls for each deck. Controls for decks that are
+    // not configured (e.g. fewer than kMaxNumberOfDecks) are missing/invalid and
+    // safely read back as 0.0 (not playing).
+    for (int i = 0; i < kMaxNumberOfDecks; ++i) {
+        m_pPlayIndicator[i] = new ControlProxy(
+                QStringLiteral("[Channel%1]").arg(i + 1),
+                QStringLiteral("play_indicator"),
+                this,
+                ControlFlag::AllowMissingOrInvalid);
+    }
 }
 
 EngineRecord::~EngineRecord() {
@@ -107,6 +118,15 @@ bool EngineRecord::metaDataHasChanged()
     return true;
 }
 
+bool EngineRecord::isAnyDeckPlaying() const {
+    for (int i = 0; i < kMaxNumberOfDecks; ++i) {
+        if (m_pPlayIndicator[i] && m_pPlayIndicator[i]->toBool()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void EngineRecord::process(const CSAMPLE* pBuffer, const int iBufferSize) {
     const auto recordingStatus = static_cast<int>(m_pRecReady->get());
     static const QString tag("EngineRecord recording");
@@ -122,43 +142,47 @@ void EngineRecord::process(const CSAMPLE* pBuffer, const int iBufferSize) {
             emit isRecording(false, false);
         }
     } else if (recordingStatus == RECORD_READY) {
-        // If we are ready for recording, i.e, the output file has been selected, we
-        // open a new file.
+        // Armed and ready to record. Like Rekordbox, the actual audio capture is
+        // deferred until a deck starts playing. Until then we stay in the READY
+        // state and no file is written, so pressing Record alone does not yet
+        // capture any audio.
+        if (isAnyDeckPlaying()) {
+            // Update file location from preferences.
+            if (updateFromPreferences() < 0) {
+                // Maybe the encoder could not be initialized
+                qDebug() << "Setting record flag to: OFF";
+                m_pRecReady->set(RECORD_OFF);
+                // Just report that we don't record
+                // There was already a message Box
+                emit isRecording(false, false);
+            } else if (openFile()) {
+                Event::start(tag);
+                qDebug("Setting record flag to: ON");
+                m_pRecReady->set(RECORD_ON);
+                emit isRecording(true, false);  // will notify the RecordingManager
 
-        // Update file location from preferences.
-        if (updateFromPreferences() < 0) {
-            // Maybe the encoder could not be initialized
-            qDebug() << "Setting record flag to: OFF";
-            m_pRecReady->set(RECORD_OFF);
-            // Just report that we don't record
-            // There was already a message Box
-            emit isRecording(false, false);
-        } else if (openFile()) {
-            Event::start(tag);
-            qDebug("Setting record flag to: ON");
-            m_pRecReady->set(RECORD_ON);
-            emit isRecording(true, false);  // will notify the RecordingManager
+                // Since we just started recording, timeout and clear the metadata.
+                m_iMetaDataLife = kMetaDataLifeTimeout;
+                m_pCurrentTrack.reset();
 
-            // Since we just started recording, timeout and clear the metadata.
-            m_iMetaDataLife = kMetaDataLifeTimeout;
-            m_pCurrentTrack.reset();
+                // clean frames counting and get current sample rate.
+                m_frames = 0;
+                m_sampleRate = mixxx::audio::SampleRate::fromDouble(m_sampleRateControl.get());
+                m_recordedDuration = 0;
 
-            // clean frames counting and get current sample rate.
-            m_frames = 0;
-            m_sampleRate = mixxx::audio::SampleRate::fromDouble(m_sampleRateControl.get());
-            m_recordedDuration = 0;
-
-            if (m_bCueIsEnabled) {
-                openCueFile();
-                m_cueTrack = 0;
+                if (m_bCueIsEnabled) {
+                    openCueFile();
+                    m_cueTrack = 0;
+                }
+            } else {
+                qDebug() << "Could not open" << m_fileName << "for writing.";
+                qDebug("Setting record flag to: OFF");
+                m_pRecReady->set(RECORD_OFF);
+                // An error occurred.
+                emit isRecording(false, true);
             }
-        } else {
-            qDebug() << "Could not open" << m_fileName << "for writing.";
-            qDebug("Setting record flag to: OFF");
-            m_pRecReady->set(RECORD_OFF);
-            // An error occurred.
-            emit isRecording(false, true);
         }
+        // else: keep waiting for a deck to start playing.
     } else if (recordingStatus == RECORD_SPLIT_CONTINUE) {
         if (fileOpen()) {
             closeFile();  // Close file and free encoder.

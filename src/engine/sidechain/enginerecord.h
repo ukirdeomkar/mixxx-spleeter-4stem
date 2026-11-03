@@ -5,6 +5,7 @@
 
 #include "audio/types.h"
 #include "control/pollingcontrolproxy.h"
+#include "util/defs.h"
 #include "encoder/encoder.h"
 #include "encoder/encodercallback.h"
 #include "engine/sidechain/sidechainworker.h"
@@ -57,6 +58,9 @@ class EngineRecord : public QObject, public EncoderCallback, public SideChainWor
     // when was the last check performed to avoid using too much CPU and as well
     // to avoid changing the metadata during scratches.
     bool metaDataHasChanged();
+    // Returns true if any deck is currently playing. Used to defer the actual
+    // audio capture until a deck starts playing.
+    bool isAnyDeckPlaying() const;
 
     void writeCueLine();
 
@@ -74,6 +78,10 @@ class EngineRecord : public QObject, public EncoderCallback, public SideChainWor
 
     PollingControlProxy m_sampleRateControl;
     ControlProxy* m_pRecReady;
+    // Controls used to detect whether any deck is playing. Recording is armed
+    // when the user presses Record, but audio is only actually captured once a
+    // deck starts playing (Rekordbox-like behavior).
+    ControlProxy* m_pPlayIndicator[kMaxNumberOfDecks];
     quint64 m_frames;
     mixxx::audio::SampleRate m_sampleRate;
     quint64 m_recordedDuration;
