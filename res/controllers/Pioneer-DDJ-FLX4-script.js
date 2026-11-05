@@ -37,9 +37,14 @@
 //
 //      * Secondary pad modes (trial attempts complex and too experimental)
 //        * Keyboard mode
-//        * Pad FX1
-//        * Pad FX2
 //        * Keyshift mode
+//
+//  Pad FX (this fork):
+//      * PAD FX1 and PAD FX2 pads are momentary effect pads, like Rekordbox
+//        * Hold a pad = effect on, release = effect off
+//        * Left pads affect deck 1, right pads affect deck 2
+//        * Effect Unit 4 is dedicated to Pad FX; units 1-3 stay on Beat FX
+//        * The effect tables are PioneerDDJFLX4.padFxBank1 / padFxBank2 below
 //
 //  Stems (this fork):
 //      * SAMPLER pad mode is repurposed for stem control
@@ -252,6 +257,15 @@ PioneerDDJFLX4.init = function() {
     // Unit 3 is the shared Beat FX for both decks (CH1 + CH2 on the switch).
     engine.setValue("[EffectRack1_EffectUnit3]", "group_[Channel1]_enable", 1);
     engine.setValue("[EffectRack1_EffectUnit3]", "group_[Channel2]_enable", 1);
+
+    // Unit 4 is dedicated to the performance pads (PAD FX1 / PAD FX2) and is
+    // fully wet, like a Rekordbox Beat FX insert. Routing is set per pad press.
+    engine.setValue("[EffectRack1_EffectUnit4]", "mix", 1.0);
+    engine.setValue("[EffectRack1_EffectUnit4]", "group_[Channel1]_enable", 0);
+    engine.setValue("[EffectRack1_EffectUnit4]", "group_[Channel2]_enable", 0);
+    for (let slot = 1; slot <= 4; ++slot) {
+        engine.setValue("[EffectRack1_EffectUnit4_Effect" + slot + "]", "enabled", 0);
+    }
     PioneerDDJFLX4.applyFaderLinkedMix();
 
     // Easy FX layout: collapse the per-effect parameter rows (Time, Feedback,
@@ -897,8 +911,12 @@ PioneerDDJFLX4.padModeKeyPressed = function(_channel, _control, value, _status, 
         PioneerDDJFLX4.toggleLight(deck.keyboardMode, true);
     } else if (_control === 0x1E) {
         PioneerDDJFLX4.toggleLight(deck.padFX1Mode, true);
+        // Leaving a Pad FX mode while a pad is held can lose the note-off, so
+        // make sure no pad effect stays enabled.
+        PioneerDDJFLX4.padFxReset();
     } else if (_control === 0x6B) {
         PioneerDDJFLX4.toggleLight(deck.padFX2Mode, true);
+        PioneerDDJFLX4.padFxReset();
     } else if (_control === 0x20) {
         PioneerDDJFLX4.toggleLight(deck.beatJumpMode, true);
     } else if (_control === 0x6D) {
@@ -937,6 +955,101 @@ PioneerDDJFLX4.stemSoloPadPressed = function(_channel, control, value, _status, 
     if (stem) {
         engine.setValue(group, stem.solo, 1);
     }
+};
+
+//
+// Pad FX
+//
+// Rekordbox uses the PAD FX1 / PAD FX2 pads as momentary Beat FX: hold a pad
+// and its effect is on, release and it is off. Mixxx has no per-pad effect
+// bank, so each pad loads its effect into this deck's Pad FX slot the first
+// time it is used and simply enables that slot while the pad is held.
+//
+// `index` is the 1-based position of the effect in Preferences > Effects.
+// Built-in effects are always listed before third-party plugins, so these
+// numbers only need editing if the visible effect list itself is reordered.
+//
+// One effect per deck at a time: pressing another pad replaces the sound.
+// Both decks can hold a pad at once; the most recent press wins the unit.
+PioneerDDJFLX4.padFxBank1 = [
+    {name: "Echo", index: 15},
+    {name: "Reverb", index: 3},
+    {name: "Flanger", index: 13},
+    {name: "Phaser", index: 5},
+    {name: "Filter", index: 14},
+    {name: "Glitch", index: 12},
+    {name: "Tremolo", index: 2},
+    {name: "Distortion", index: 16}
+];
+
+PioneerDDJFLX4.padFxBank2 = [
+    {name: "Bitcrusher", index: 20},
+    {name: "White Noise", index: 1},
+    {name: "Moog Ladder 4 Filter", index: 7},
+    {name: "Autopan", index: 24},
+    {name: "Compressor", index: 17},
+    {name: "Echo", index: 15},
+    {name: "Reverb", index: 3},
+    {name: "Filter", index: 14}
+];
+
+// PAD FX1 pads use notes 0x10-0x17, PAD FX2 pads use 0x50-0x57.
+PioneerDDJFLX4.padFxBankForNote = function(control) {
+    if (control >= 0x10 && control <= 0x17) {
+        return {bank: PioneerDDJFLX4.padFxBank1, base: 0x10};
+    }
+    if (control >= 0x50 && control <= 0x57) {
+        return {bank: PioneerDDJFLX4.padFxBank2, base: 0x50};
+    }
+    return null;
+};
+
+PioneerDDJFLX4.padFxReset = function() {
+    for (let slot = 1; slot <= 2; ++slot) {
+        engine.setValue("[EffectRack1_EffectUnit4_Effect" + slot + "]", "enabled", 0);
+    }
+    engine.setValue("[EffectRack1_EffectUnit4]", "group_[Channel1]_enable", 0);
+    engine.setValue("[EffectRack1_EffectUnit4]", "group_[Channel2]_enable", 0);
+};
+
+PioneerDDJFLX4.padFxPadPressed = function(_channel, control, value, _status, group) {
+    const range = PioneerDDJFLX4.padFxBankForNote(control);
+    if (!range) {
+        return;
+    }
+    const padIndex = control - range.base;
+    if (padIndex >= range.bank.length) {
+        return;
+    }
+
+    const deck = group === "[Channel2]" ? 2 : 1;
+    const otherDeck = deck === 1 ? 2 : 1;
+    const slotGroup = "[EffectRack1_EffectUnit4_Effect" + deck + "]";
+    const otherSlotGroup = "[EffectRack1_EffectUnit4_Effect" + otherDeck + "]";
+    const ledStatus = deck === 1 ? 0x97 : 0x99;
+
+    if (value === 0) {
+        engine.setValue(slotGroup, "enabled", 0);
+        midi.sendShortMsg(ledStatus, control, 0x00);
+        return;
+    }
+
+    // Route the Pad FX unit to the deck whose pad was pressed. The other deck
+    // is muted through the unit so its audio never picks up this effect.
+    engine.setValue("[EffectRack1_EffectUnit4]",
+            "group_[Channel" + deck + "]_enable", 1);
+    engine.setValue("[EffectRack1_EffectUnit4]",
+            "group_[Channel" + otherDeck + "]_enable", 0);
+    engine.setValue(otherSlotGroup, "enabled", 0);
+
+    // Reload only when the slot holds a different effect, so hitting the same
+    // pad again is instant and keeps the parameters the user adjusted.
+    const effect = range.bank[padIndex];
+    if (engine.getValue(slotGroup, "loaded_effect") !== effect.index) {
+        engine.setValue(slotGroup, "loaded_effect", effect.index);
+    }
+    engine.setValue(slotGroup, "enabled", 1);
+    midi.sendShortMsg(ledStatus, control, 0x7F);
 };
 
 PioneerDDJFLX4.samplerPadPressed = function(_channel, _control, value, _status, group) {
