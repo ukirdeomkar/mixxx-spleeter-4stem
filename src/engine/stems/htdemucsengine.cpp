@@ -222,6 +222,15 @@ bool HTDemucsEngine::separateTrack(uint32_t totalFrames,
         return false;
     }
 
+    // The overlap-add accumulators are shared by every run. A cancelled or
+    // failed separation returns before the final segment drains them, so start
+    // from a clean slate; otherwise the first overlap region of the next track
+    // would be mixed with the previous track's tail.
+    for (auto& plane : m_acc) {
+        std::fill(plane.begin(), plane.end(), 0.0f);
+    }
+    std::fill(m_weight.begin(), m_weight.end(), 0.0f);
+
     const uint32_t segmentCount =
             (totalFrames + kStrideSamples - 1) / kStrideSamples;
 
