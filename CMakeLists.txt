@@ -884,10 +884,15 @@ add_library(mixxx-lib STATIC EXCLUDE_FROM_ALL
   src/engine/channels/enginechannel.cpp
   src/engine/channels/enginedeck.cpp
   src/engine/channels/enginemicrophone.cpp
+  src/engine/stems/htdemucsengine.cpp
   src/engine/stems/spleeterstft.cpp
   src/engine/stems/stemcache.cpp
   src/engine/stems/stemchannelprocessor.cpp
+  src/engine/stems/stemdecode.cpp
   src/engine/stems/stemdspisolator.cpp
+  src/engine/stems/stemhqservice.cpp
+  src/engine/stems/stemhqstore.cpp
+  src/engine/stems/stemmodelpaths.cpp
   src/engine/stems/stemseparator.cpp
   src/engine/stems/stemtrackbuffer.cpp
   src/engine/stems/stemworkerthread.cpp

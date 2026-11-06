@@ -5,12 +5,18 @@
 #include <QFileInfo>
 #include <QCryptographicHash>
 #include <QDebug>
+#include <QSaveFile>
+
+#include <cstring>
 
 namespace mixxx {
 
 namespace {
 // v2: four stems (vocals, drums, bass, other). v1 caches are ignored.
 constexpr char kMagic[8] = {'M', 'I', 'X', 'S', 'T', 'E', 'M', '2'};
+
+constexpr qint64 kMinStemsFileSize =
+        static_cast<qint64>(sizeof(kMagic) + sizeof(uint32_t));
 } // namespace
 
 QString StemCache::getCacheDir() {
@@ -19,30 +25,48 @@ QString StemCache::getCacheDir() {
     return dir;
 }
 
-QString StemCache::getCachePath(TrackPointer pTrack) {
+QByteArray StemCache::stemsKeyForTrack(TrackPointer pTrack) {
     if (!pTrack) {
-        return QString();
+        return QByteArray();
     }
-    QString key = pTrack->getLocation() + ":" + QString::number(pTrack->getFileInfo().sizeInBytes());
-    QByteArray hash = QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha1).toHex();
-    return getCacheDir() + "/" + hash + ".stems";
+    const QString key = pTrack->getLocation() + ":" +
+            QString::number(pTrack->getFileInfo().sizeInBytes());
+    return QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha1);
 }
 
-bool StemCache::hasCachedStems(TrackPointer pTrack) {
-    QString path = getCachePath(pTrack);
+QString StemCache::getCachePath(TrackPointer pTrack) {
+    const QByteArray hash = stemsKeyForTrack(pTrack);
+    if (hash.isEmpty()) {
+        return QString();
+    }
+    return getCacheDir() + "/" + hash.toHex() + ".stems";
+}
+
+bool StemCache::hasStemsFile(const QString& path) {
     if (path.isEmpty()) {
         return false;
     }
-    QFileInfo fi(path);
-    return fi.exists() && fi.size() > static_cast<qint64>(sizeof(kMagic) + sizeof(uint32_t));
+    const QFileInfo fi(path);
+    return fi.exists() && fi.isFile() && fi.size() > kMinStemsFileSize;
+}
+
+bool StemCache::hasCachedStems(TrackPointer pTrack) {
+    return hasStemsFile(getCachePath(pTrack));
 }
 
 bool StemCache::loadFromCache(TrackPointer pTrack, StemTrackBuffer* pBuffer) {
-    if (!pTrack || !pBuffer) {
+    return loadFromPath(getCachePath(pTrack), pBuffer);
+}
+
+bool StemCache::saveToCache(TrackPointer pTrack, const StemTrackBuffer* pBuffer) {
+    return saveToPath(getCachePath(pTrack), pBuffer);
+}
+
+bool StemCache::loadFromPath(const QString& path, StemTrackBuffer* pBuffer) {
+    if (path.isEmpty() || !pBuffer) {
         return false;
     }
 
-    QString path = getCachePath(pTrack);
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         return false;
@@ -82,6 +106,7 @@ bool StemCache::loadFromCache(TrackPointer pTrack, StemTrackBuffer* pBuffer) {
         file.read(reinterpret_cast<char*>(otherL.data()), channelBytes) != channelBytes ||
         file.read(reinterpret_cast<char*>(otherR.data()), channelBytes) != channelBytes) {
         qDebug() << "StemCache: Incomplete stem data read from" << path;
+        pBuffer->clear();
         return false;
     }
 
@@ -91,13 +116,13 @@ bool StemCache::loadFromCache(TrackPointer pTrack, StemTrackBuffer* pBuffer) {
                         bassL.data(), bassR.data(),
                         otherL.data(), otherR.data());
 
-    qDebug() << "StemCache: Successfully loaded real AI stems from cache for" << pTrack->getTitle()
+    qDebug() << "StemCache: Successfully loaded stems from" << path
              << "(" << totalFrames << "frames)";
     return true;
 }
 
-bool StemCache::saveToCache(TrackPointer pTrack, const StemTrackBuffer* pBuffer) {
-    if (!pTrack || !pBuffer || pBuffer->totalFrames() == 0) {
+bool StemCache::saveToPath(const QString& path, const StemTrackBuffer* pBuffer) {
+    if (path.isEmpty() || !pBuffer || pBuffer->totalFrames() == 0) {
         return false;
     }
 
@@ -106,15 +131,19 @@ bool StemCache::saveToCache(TrackPointer pTrack, const StemTrackBuffer* pBuffer)
         return false; // Incomplete separation, don't cache
     }
 
-    QString path = getCachePath(pTrack);
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        qDebug() << "StemCache: Failed to create cache file" << path;
+    QDir().mkpath(QFileInfo(path).absolutePath());
+
+    // QSaveFile writes to a temporary file and renames it on commit(), so an
+    // interrupted run can never leave a truncated .stems file behind.
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        qDebug() << "StemCache: Failed to create stem file" << path;
         return false;
     }
 
     if (file.write(kMagic, sizeof(kMagic)) != sizeof(kMagic) ||
         file.write(reinterpret_cast<const char*>(&totalFrames), sizeof(uint32_t)) != sizeof(uint32_t)) {
+        file.cancelWriting();
         return false;
     }
 
@@ -142,12 +171,17 @@ bool StemCache::saveToCache(TrackPointer pTrack, const StemTrackBuffer* pBuffer)
         file.write(reinterpret_cast<const char*>(bassR.data()), channelBytes) != channelBytes ||
         file.write(reinterpret_cast<const char*>(otherL.data()), channelBytes) != channelBytes ||
         file.write(reinterpret_cast<const char*>(otherR.data()), channelBytes) != channelBytes) {
-        qDebug() << "StemCache: Write error saving stems cache to" << path;
+        qDebug() << "StemCache: Write error saving stems to" << path;
+        file.cancelWriting();
         return false;
     }
 
-    qDebug() << "StemCache: Successfully saved real AI stems to cache for" << pTrack->getTitle()
-             << "at" << path;
+    if (!file.commit()) {
+        qDebug() << "StemCache: Failed to commit stem file" << path;
+        return false;
+    }
+
+    qDebug() << "StemCache: Successfully saved stems to" << path;
     return true;
 }
 

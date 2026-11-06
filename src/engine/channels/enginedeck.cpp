@@ -36,7 +36,8 @@ EngineDeck::EngineDeck(
 
     m_pPregain = new EnginePregain(getGroup());
     m_pBuffer = new EngineBuffer(getGroup(), pConfig, this, pMixingEngine);
-    m_pStemProcessor = std::make_unique<mixxx::StemChannelProcessor>(getGroup(), m_pBuffer);
+    m_pStemProcessor = std::make_unique<mixxx::StemChannelProcessor>(
+            getGroup(), m_pBuffer, pConfig);
 }
 
 EngineDeck::~EngineDeck() {

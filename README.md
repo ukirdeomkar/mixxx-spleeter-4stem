@@ -124,6 +124,11 @@ This project is standing on a lot of other people's work. Go star these:
   pad 1 vocals, 2 instruments, 3 bass, 4 drums, `SHIFT`+pad solos,
   pads 5–8 unbound and reserved. Pad LEDs follow the stem state.
 - **On-screen control strip** above the track title, same order as the pads.
+- **Optional high quality stems (HT-Demucs)**: right-click a track →
+  **Analyze → Add High Quality Stems (HT-Demucs)…**, pick a folder (an external
+  drive or USB stick works), and the track is separated offline at Demucs
+  quality. From then on the deck loads those stems instead of the fast engine
+  for that track.
 - **No disk cache**: raw float stems would be ~420 MB per five-minute track;
   separation is fast enough that caching is not worth the disk.
 
@@ -142,6 +147,10 @@ first block including warm-up.
   [Best-Practice/spleeter-4stems-onnx](https://huggingface.co/Best-Practice/spleeter-4stems-onnx).
   Place them in `~/Library/Application Support/Mixxx/models/`, next to the
   executable in `models/`, or in the app bundle's `Resources/models/`.
+- Optional: `htdemucs.onnx` (~316 MB, MIT) from
+  [StemSplitio/htdemucs-onnx](https://huggingface.co/StemSplitio/htdemucs-onnx)
+  in the same folder enables the offline high quality engine. Without it the
+  menu entry explains where to put the file.
 
 ## Building (macOS)
 
@@ -206,10 +215,12 @@ and the last button switches between `DSP` (instant) and `AI` (Spleeter).
   load for a moment first — the recording captures whatever the deck is
   currently outputting.
 - The FLX4 mapping covers decks 1 and 2 (the two physical deck sides).
-- Separation quality is Spleeter's: well below Demucs, but it runs on this
-  hardware and Demucs does not. An optional Demucs ("Quality") engine is
-  designed but not implemented — see [`docs/todo-hq-demucs.md`](docs/todo-hq-demucs.md)
-  for the measurements, packaging cost and gating rules.
+- Real-time separation quality is Spleeter's: below Demucs, but it runs on this
+  hardware and Demucs does not. Demucs is available offline through **Add High
+  Quality Stems** instead: it runs at roughly 0.6x real-time, writes ~420 MB per
+  five minutes of audio into the folder you pick, and the deck then prefers
+  those stems. See [`docs/todo-hq-demucs.md`](docs/todo-hq-demucs.md) for the
+  measurements.
 - No Android APK. Android support exists only in Mixxx `main` (2.7-dev, QML UI),
   not in this 2.5.6 tree, and MIDI controllers are disabled there — so the FLX4
   would not work even after a port. See [`docs/todo-android.md`](docs/todo-android.md).

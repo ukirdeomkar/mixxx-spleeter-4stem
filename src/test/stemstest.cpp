@@ -4,10 +4,15 @@
 #include <vector>
 
 #include "engine/stems/spleeterstft.h"
+#include "engine/stems/stemcache.h"
+#include "engine/stems/stemhqstore.h"
 #include "engine/stems/stemseparator.h"
 #include "engine/stems/stemtrackbuffer.h"
 #include "engine/stems/stemdspisolator.h"
 #include "test/mixxxtest.h"
+
+#include <QDir>
+#include <QTemporaryDir>
 
 namespace {
 
@@ -165,6 +170,85 @@ TEST_F(StemsTest, SpleeterReconstruction) {
     }
     const double residualDb = 10.0 * std::log10((error + 1e-30) / (reference + 1e-30));
     EXPECT_LT(residualDb, -80.0) << "stems do not reconstruct the mix";
+}
+
+// The high quality stem file name must be deterministic, filesystem-safe and
+// unique per track, because it is the only thing that connects a file in the
+// user's folder to a track.
+TEST_F(StemsTest, HqStemFileNameIsStableAndSafe) {
+    const auto pTrack = Track::newTemporary(
+            QStringLiteral("/music/AC_DC - Back In Black?.flac"));
+    const QString name = mixxx::StemHqStore::fileNameForTrack(pTrack);
+
+    ASSERT_FALSE(name.isEmpty());
+    EXPECT_TRUE(name.endsWith(QStringLiteral(".stems")));
+    EXPECT_FALSE(name.contains(QLatin1Char('?')));
+    EXPECT_FALSE(name.contains(QLatin1Char('/')));
+    EXPECT_FALSE(name.contains(QLatin1Char('\\')));
+
+    // Same track -> same name; a different file -> a different name.
+    EXPECT_EQ(name,
+            mixxx::StemHqStore::fileNameForTrack(Track::newTemporary(
+                    QStringLiteral("/music/AC_DC - Back In Black?.flac"))));
+    EXPECT_NE(name,
+            mixxx::StemHqStore::fileNameForTrack(Track::newTemporary(
+                    QStringLiteral("/music/Other Track.flac"))));
+}
+
+// Saving to an explicit path (the high quality store) must produce the same
+// format the cache uses, so a deck can load it without special casing.
+TEST_F(StemsTest, StemFileRoundTrip) {
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const QString path = QDir(dir.path()).filePath(QStringLiteral("track.stems"));
+
+    constexpr uint32_t kFrames = 2048;
+    mixxx::StemTrackBuffer buffer;
+    buffer.allocate(kFrames);
+    std::vector<float> vocL(kFrames), vocR(kFrames);
+    std::vector<float> drumL(kFrames), drumR(kFrames);
+    std::vector<float> bassL(kFrames), bassR(kFrames);
+    std::vector<float> otherL(kFrames), otherR(kFrames);
+    for (uint32_t i = 0; i < kFrames; ++i) {
+        vocL[i] = static_cast<float>(i) * 0.001f;
+        vocR[i] = -vocL[i];
+        drumL[i] = vocL[i] * 2.0f;
+        drumR[i] = -drumL[i];
+        bassL[i] = vocL[i] * 3.0f;
+        bassR[i] = -bassL[i];
+        otherL[i] = vocL[i] * 4.0f;
+        otherR[i] = -otherL[i];
+    }
+    buffer.writeChunk(0, kFrames,
+            vocL.data(), vocR.data(),
+            drumL.data(), drumR.data(),
+            bassL.data(), bassR.data(),
+            otherL.data(), otherR.data());
+
+    ASSERT_TRUE(mixxx::StemCache::saveToPath(path, &buffer));
+    ASSERT_TRUE(mixxx::StemCache::hasStemsFile(path));
+
+    mixxx::StemTrackBuffer loaded;
+    ASSERT_TRUE(mixxx::StemCache::loadFromPath(path, &loaded));
+    ASSERT_EQ(loaded.totalFrames(), kFrames);
+    ASSERT_EQ(loaded.framesReady(), kFrames);
+
+    std::vector<float> outVocL(kFrames), outVocR(kFrames);
+    std::vector<float> outDrumL(kFrames), outDrumR(kFrames);
+    std::vector<float> outBassL(kFrames), outBassR(kFrames);
+    std::vector<float> outOtherL(kFrames), outOtherR(kFrames);
+    loaded.readFrames(0, kFrames,
+            outVocL.data(), outVocR.data(),
+            outDrumL.data(), outDrumR.data(),
+            outBassL.data(), outBassR.data(),
+            outOtherL.data(), outOtherR.data());
+
+    for (uint32_t i = 0; i < kFrames; ++i) {
+        EXPECT_FLOAT_EQ(bassL[i], outBassL[i]);
+        EXPECT_FLOAT_EQ(bassR[i], outBassR[i]);
+        EXPECT_FLOAT_EQ(otherL[i], outOtherL[i]);
+        EXPECT_FLOAT_EQ(otherR[i], outOtherR[i]);
+    }
 }
 
 } // namespace

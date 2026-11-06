@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QString>
 #include <memory>
 
@@ -20,6 +21,9 @@ class StemCache {
     static QString getCacheDir();
     static QString getCachePath(TrackPointer pTrack);
 
+    /// Stable identity of a track for stem file naming: location + file size.
+    static QByteArray stemsKeyForTrack(TrackPointer pTrack);
+
     // Check if valid cached stems exist on disk for the given track
     static bool hasCachedStems(TrackPointer pTrack);
 
@@ -28,6 +32,13 @@ class StemCache {
 
     // Save stems from buffer to disk cache. Returns true on success.
     static bool saveToCache(TrackPointer pTrack, const StemTrackBuffer* pBuffer);
+
+    // Same on-disk format (.stems, magic MIXSTEM2) but addressed by an explicit
+    // path. Used by the high quality (HT-Demucs) stem store, whose files live
+    // in a folder the user picked instead of in the cache dir.
+    static bool hasStemsFile(const QString& path);
+    static bool loadFromPath(const QString& path, StemTrackBuffer* pBuffer);
+    static bool saveToPath(const QString& path, const StemTrackBuffer* pBuffer);
 };
 
 } // namespace mixxx

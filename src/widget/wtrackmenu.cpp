@@ -2,9 +2,12 @@
 
 #include <QCheckBox>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFileDialog>
 #include <QInputDialog>
 #include <QList>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QModelIndex>
 #include <QVBoxLayout>
 
@@ -12,6 +15,9 @@
 #include "analyzer/analyzersilence.h"
 #include "analyzer/analyzertrack.h"
 #include "control/controlobject.h"
+#include "engine/stems/htdemucsengine.h"
+#include "engine/stems/stemhqservice.h"
+#include "engine/stems/stemhqstore.h"
 #include "library/coverartutils.h"
 #include "library/dao/trackschema.h"
 #include "library/dlgtagfetcher.h"
@@ -552,6 +558,19 @@ void WTrackMenu::createActions() {
                 &WTrackMenu::slotReanalyzeWithVariableTempo);
     }
 
+    if (featureIsEnabled(Feature::HighQualityStems)) {
+        m_pAddHighQualityStemsAct = make_parented<QAction>(
+                tr("Add High Quality Stems (HT-Demucs)..."), this);
+        m_pAddHighQualityStemsAct->setToolTip(
+                tr("Separate this track with HT-Demucs into a folder of your "
+                   "choice. The decks then use those stems instead of the fast "
+                   "engine for this track."));
+        connect(m_pAddHighQualityStemsAct,
+                &QAction::triggered,
+                this,
+                &WTrackMenu::slotAddHighQualityStems);
+    }
+
     // This action is only usable when m_deckGroup is set. That is true only
     // for WTrackmenu instantiated by WTrackProperty and other deck widgets, thus
     // don't create it if a track model is set.
@@ -718,7 +737,13 @@ void WTrackMenu::setupActions() {
         m_pAnalyzeMenu->addAction(m_pReanalyzeAction);
         m_pAnalyzeMenu->addAction(m_pReanalyzeConstBpmAction);
         m_pAnalyzeMenu->addAction(m_pReanalyzeVarBpmAction);
+        if (m_pAddHighQualityStemsAct) {
+            m_pAnalyzeMenu->addSeparator();
+            m_pAnalyzeMenu->addAction(m_pAddHighQualityStemsAct);
+        }
         addMenu(m_pAnalyzeMenu);
+    } else if (m_pAddHighQualityStemsAct) {
+        addAction(m_pAddHighQualityStemsAct);
     }
 
     // This action is created only for menus instantiated by deck widgets (e.g.
@@ -1699,6 +1724,62 @@ void WTrackMenu::slotReanalyzeWithVariableTempo() {
     AnalyzerTrack::Options options;
     options.useFixedTempo = false;
     addToAnalysis(options);
+}
+
+void WTrackMenu::slotAddHighQualityStems() {
+    const TrackPointerList tracks = getTrackPointers();
+    if (tracks.isEmpty()) {
+        return;
+    }
+
+    if (StemHqService::instance().isBusy()) {
+        QMessageBox::information(parentWidget(),
+                tr("Add high quality stems"),
+                tr("A high quality separation is already running. Wait for it to "
+                   "finish before starting another one."));
+        return;
+    }
+
+    if (!mixxx::HTDemucsEngine::instance().isAvailable()) {
+        QMessageBox::warning(parentWidget(),
+                tr("Add high quality stems"),
+                tr("The HT-Demucs model is not installed.\n\n"
+                   "Download htdemucs.onnx (about 316 MB, MIT licensed) from\n"
+                   "%1\n"
+                   "and put it into the models folder next to the Mixxx "
+                   "application (or into your Mixxx settings folder under "
+                   "models/).")
+                        .arg(QStringLiteral(
+                                "https://huggingface.co/StemSplitio/htdemucs-onnx")));
+        return;
+    }
+
+    const QString outputDir = QFileDialog::getExistingDirectory(
+            parentWidget(),
+            tr("Folder for the high quality stems"),
+            mixxx::StemHqStore::getLastOutputDir(m_pConfig),
+            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    if (outputDir.isEmpty()) {
+        return; // user cancelled
+    }
+    mixxx::StemHqStore::setLastOutputDir(m_pConfig, outputDir);
+
+    const QMessageBox::StandardButton reply = QMessageBox::question(
+            parentWidget(),
+            tr("Add high quality stems"),
+            tr("HT-Demucs is much slower than the fast engine: expect roughly "
+               "twice the track length (a 5 minute track takes 10 to 15 "
+               "minutes) and about 420 MB of disk space per 5 minutes of audio.\n\n"
+               "Stems will be written to:\n%1\n\n"
+               "The app stays usable while this runs.")
+                    .arg(QDir::toNativeSeparators(outputDir)),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::Yes);
+    if (reply != QMessageBox::Yes) {
+        return;
+    }
+
+    mixxx::StemHqService::instance().enqueue(tracks, outputDir);
 }
 
 void WTrackMenu::slotLockBpm() {

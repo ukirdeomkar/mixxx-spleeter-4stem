@@ -1,5 +1,7 @@
 #include "engine/stems/stemseparator.h"
 
+#include "engine/stems/stemmodelpaths.h"
+
 #ifdef MIXXX_HAS_ONNXRUNTIME
 #include <onnxruntime_cxx_api.h>
 #ifdef __APPLE__
@@ -9,11 +11,7 @@
 #endif
 #endif
 
-#include <QCoreApplication>
-#include <QDir>
-#include <QFile>
 #include <QFileInfo>
-#include <QStandardPaths>
 #include <QDebug>
 #include <QElapsedTimer>
 
@@ -50,45 +48,6 @@ const char* const kStemLabels[SpleeterEngine::kStemCount] = {
 // Spleeter's soft ratio mask epsilon: 1e-10 shared across all four stems.
 constexpr float kMaskEpsilon = 1e-10f / SpleeterEngine::kStemCount;
 
-QString findModelFile(const QString& filename) {
-#if defined(__ANDROID__) || defined(ANDROID)
-    // On Android the model may ship inside the APK; unpack it once.
-    const QString assetPath = "assets:/models/" + filename;
-    if (QFile::exists(assetPath)) {
-        const QString destDir =
-                QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/models";
-        QDir().mkpath(destDir);
-        const QString destPath = destDir + "/" + filename;
-        if (!QFileInfo::exists(destPath)) {
-            QFile::copy(assetPath, destPath);
-        }
-        if (QFileInfo::exists(destPath)) {
-            return destPath;
-        }
-    }
-#endif
-
-    const QStringList searchDirs = {
-            QCoreApplication::applicationDirPath() + "/models",
-            QCoreApplication::applicationDirPath() + "/../Resources/models",
-            QDir::currentPath() + "/models",
-            QDir::currentPath(),
-            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/models",
-            QDir::homePath() + "/.mixxx/models",
-            QDir::homePath() + "/Library/Application Support/Mixxx/models",
-            "/usr/share/mixxx/models",
-            "/usr/local/share/mixxx/models",
-    };
-
-    for (const auto& dir : searchDirs) {
-        const QString candidate = dir + "/" + filename;
-        if (QFileInfo::exists(candidate)) {
-            return candidate;
-        }
-    }
-    return QString();
-}
-
 void configureSessionOptions(Ort::SessionOptions& options) {
     options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
@@ -117,7 +76,7 @@ SpleeterEngine::~SpleeterEngine() {
 
 bool SpleeterEngine::locateModels(QString modelPaths[kStemCount]) const {
     for (int i = 0; i < kStemCount; ++i) {
-        modelPaths[i] = findModelFile(kStemFileNames[i]);
+        modelPaths[i] = findStemModelFile(kStemFileNames[i]);
         if (modelPaths[i].isEmpty()) {
             return false;
         }

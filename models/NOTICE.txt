@@ -14,3 +14,23 @@ ONNX export: Best-Practice/spleeter-4stems-onnx
 The export derives from sherpa-onnx's PyTorch port of Spleeter's U-Net
 (Apache-2.0), with the activation functions parameterised so that the 4stems
 configuration uses ELU instead of the 2stems LeakyReLU/ReLU defaults.
+
+HT-Demucs v4 model (optional, high quality stems)
+=================================================
+
+htdemucs.onnx (~316 MB) is NOT bundled by default; it is downloaded on demand
+by the user into the models folder.
+
+Model architecture and weights: HT-Demucs (Hybrid Transformer Demucs), Meta AI
+  https://github.com/facebookresearch/demucs
+  MIT licence
+  Rouard, Massa, Defossez, "Hybrid Transformers for Music Source Separation",
+  ICASSP 2023
+
+ONNX export: StemSplitio/htdemucs-onnx
+  https://huggingface.co/StemSplitio/htdemucs-onnx
+  MIT licence
+
+Model I/O: input "mix" float32 [1, 2, 343980] (7.8 s, 44.1 kHz stereo),
+output "stems" float32 [1, 4, 2, 343980] in the order drums, bass, other,
+vocals.

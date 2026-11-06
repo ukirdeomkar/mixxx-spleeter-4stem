@@ -21,10 +21,18 @@ on:
         description: "Build the Linux .deb"
         type: boolean
         default: true
-      build_macos:
-        description: "Build macOS DMGs (Intel x86_64 + Apple Silicon arm64)"
+      build_macos_intel:
+        description: "Build the macOS Intel (x86_64) DMG"
         type: boolean
         default: true
+      build_macos_arm64:
+        description: "Build the macOS Apple Silicon (arm64) DMG"
+        type: boolean
+        default: true
+      bundle_htdemucs:
+        description: "Bundle htdemucs.onnx (high quality stems, +316 MB per artifact)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -134,6 +142,17 @@ jobs:
             if ((Get-Item $out).Length -lt 10MB) { throw "model $stem looks truncated" }
           }
 
+          # Optional high quality engine (HT-Demucs). Off by default because it
+          # adds ~316 MB to every artifact.
+          if ("${{ inputs.bundle_htdemucs }}" -eq "true") {
+            $hf = "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs.onnx"
+            Write-Host "downloading htdemucs.onnx (high quality stems)"
+            Invoke-WebRequest -Uri $hf -OutFile stage\models\htdemucs.onnx
+            if ((Get-Item stage\models\htdemucs.onnx).Length -lt 200MB) {
+              throw "htdemucs.onnx looks truncated"
+            }
+          }
+
           Copy-Item README.md stage\README-mixxx-stems.md -ErrorAction SilentlyContinue
           Compress-Archive -Path stage\* -DestinationPath mixxx-stems-windows-x64.zip -Force
           Get-Item mixxx-stems-windows-x64.zip | Format-List Name, Length
@@ -186,6 +205,18 @@ jobs:
           done
           ls -lh models/
 
+      - name: Fetch HT-Demucs model (high quality stems)
+        if: ${{ inputs.bundle_htdemucs }}
+        run: |
+          curl -fL --retry 3 \
+            "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs.onnx" \
+            -o models/htdemucs.onnx
+          size=$(wc -c < models/htdemucs.onnx)
+          if [ "$size" -lt 200000000 ]; then
+            echo "htdemucs.onnx looks truncated ($size bytes)"; exit 1
+          fi
+          ls -lh models/
+
       - name: Configure
         run: |
           cmake -S . -B build \
@@ -225,7 +256,7 @@ jobs:
   # macOS Intel (runs on your 2017 Intel Mac and any x86_64 Mac)
   # ---------------------------------------------------------------------------
   macos_intel:
-    if: ${{ inputs.build_macos }}
+    if: ${{ inputs.build_macos_intel }}
     runs-on: macos-15-intel
     timeout-minutes: 180
     env:
@@ -250,6 +281,18 @@ jobs:
             echo "downloading $stem.onnx"
             curl -fL --retry 3 "$base/$stem.onnx" -o "models/spleeter_$stem.onnx"
           done
+          ls -lh models/
+
+      - name: Fetch HT-Demucs model (high quality stems)
+        if: ${{ inputs.bundle_htdemucs }}
+        run: |
+          curl -fL --retry 3 \
+            "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs.onnx" \
+            -o models/htdemucs.onnx
+          size=$(wc -c < models/htdemucs.onnx)
+          if [ "$size" -lt 200000000 ]; then
+            echo "htdemucs.onnx looks truncated ($size bytes)"; exit 1
+          fi
           ls -lh models/
 
       - name: Configure
@@ -324,7 +367,7 @@ jobs:
   # macOS Apple Silicon (arm64, cross-compiled on the Intel runner)
   # ---------------------------------------------------------------------------
   macos_arm64:
-    if: ${{ inputs.build_macos }}
+    if: ${{ inputs.build_macos_arm64 }}
     runs-on: macos-15-intel
     timeout-minutes: 180
     env:
@@ -346,6 +389,18 @@ jobs:
             echo "downloading $stem.onnx"
             curl -fL --retry 3 "$base/$stem.onnx" -o "models/spleeter_$stem.onnx"
           done
+          ls -lh models/
+
+      - name: Fetch HT-Demucs model (high quality stems)
+        if: ${{ inputs.bundle_htdemucs }}
+        run: |
+          curl -fL --retry 3 \
+            "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/main/htdemucs.onnx" \
+            -o models/htdemucs.onnx
+          size=$(wc -c < models/htdemucs.onnx)
+          if [ "$size" -lt 200000000 ]; then
+            echo "htdemucs.onnx looks truncated ($size bytes)"; exit 1
+          fi
           ls -lh models/
 
       - name: Configure

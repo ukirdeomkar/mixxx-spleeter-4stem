@@ -57,11 +57,14 @@ class WTrackMenu : public QMenu {
         SelectInLibrary = 1 << 15,
         Analyze = 1 << 16,
         FindOnWeb = 1 << 17,
+        // Offline HT-Demucs separation into a user-chosen folder. Slow and
+        // memory hungry, so it is its own feature flag.
+        HighQualityStems = 1 << 18,
         TrackModelFeatures = Remove | HideUnhidePurge,
         All = AutoDJ | LoadTo | Playlist | Crate | Remove | Metadata | Reset | Analyze |
                 BPM | Color | HideUnhidePurge | RemoveFromDisk | FileBrowser |
                 Properties | SearchRelated | UpdateReplayGainFromPregain | SelectInLibrary |
-                FindOnWeb
+                FindOnWeb | HighQualityStems
     };
     Q_DECLARE_FLAGS(Features, Feature)
 
@@ -74,6 +77,7 @@ class WTrackMenu : public QMenu {
             WTrackMenu::Feature::Metadata |
             WTrackMenu::Feature::Reset |
             WTrackMenu::Feature::Analyze |
+            WTrackMenu::Feature::HighQualityStems |
             WTrackMenu::Feature::BPM |
             WTrackMenu::Feature::Color |
             WTrackMenu::Feature::RemoveFromDisk |
@@ -150,6 +154,7 @@ class WTrackMenu : public QMenu {
     void slotReanalyze();
     void slotReanalyzeWithFixedTempo();
     void slotReanalyzeWithVariableTempo();
+    void slotAddHighQualityStems();
 
     // BPM
     void slotLockBpm();
@@ -330,6 +335,9 @@ class WTrackMenu : public QMenu {
     parented_ptr<QAction> m_pReanalyzeAction;
     parented_ptr<QAction> m_pReanalyzeConstBpmAction;
     parented_ptr<QAction> m_pReanalyzeVarBpmAction;
+
+    // Offline high quality (HT-Demucs) stems
+    parented_ptr<QAction> m_pAddHighQualityStemsAct;
 
     // Clear track metadata actions
     parented_ptr<QAction> m_pClearBeatsAction;

@@ -1,15 +1,21 @@
 #include "engine/stems/stemchannelprocessor.h"
 #include "engine/stems/stemcache.h"
+#include "engine/stems/stemhqservice.h"
+#include "engine/stems/stemhqstore.h"
 #include "engine/enginebuffer.h"
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <utility>
 
 namespace mixxx {
 
-StemChannelProcessor::StemChannelProcessor(const QString& group, EngineBuffer* pBuffer)
+StemChannelProcessor::StemChannelProcessor(const QString& group,
+        EngineBuffer* pBuffer,
+        UserSettingsPointer pConfig)
         : m_group(group),
           m_pEngineBuffer(pBuffer),
+          m_pConfig(std::move(pConfig)),
           m_pStemTrackBuffer(std::make_shared<StemTrackBuffer>()) {
     // 1. Controls
     m_pStemsActive = std::make_unique<ControlPushButton>(ConfigKey(m_group, "stems_active"));
@@ -97,6 +103,8 @@ StemChannelProcessor::StemChannelProcessor(const QString& group, EngineBuffer* p
         connect(m_pEngineBuffer, &EngineBuffer::trackLoaded,
                 this, &StemChannelProcessor::slotTrackLoaded);
     }
+    connect(&StemHqService::instance(), &StemHqService::hqStemsReady,
+            this, &StemChannelProcessor::slotHqStemsReady);
 }
 
 StemChannelProcessor::~StemChannelProcessor() {
@@ -168,6 +176,12 @@ void StemChannelProcessor::slotSourceChanged(double v) {
     if (v >= 0.5 && m_pEngineBuffer) {
         TrackPointer pTrack = m_pEngineBuffer->getLoadedTrack();
         if (pTrack) {
+            const QString hqStemsPath = StemHqStore::findStemsForTrack(
+                    pTrack, StemHqStore::getLastOutputDir(m_pConfig));
+            if (!hqStemsPath.isEmpty()) {
+                m_pWorkerThread->loadTrack(pTrack, hqStemsPath);
+                return;
+            }
             if (StemCache::hasCachedStems(pTrack)) {
                 if (StemCache::loadFromCache(pTrack, m_pStemTrackBuffer.get())) {
                     m_pStemsProgress->set(1.0);
@@ -192,7 +206,16 @@ void StemChannelProcessor::slotTrackLoaded(TrackPointer pNewTrack, TrackPointer 
         // first audible buffer is already the clean mix.
         resetStemMix();
 
-        // 1. Instant load from disk cache if this track was previously separated
+        // 1. High quality (HT-Demucs) stems win over everything else. They are
+        // loaded on the worker thread, so the GUI never reads 400 MB of audio.
+        const QString hqStemsPath = StemHqStore::findStemsForTrack(
+                pNewTrack, StemHqStore::getLastOutputDir(m_pConfig));
+        if (!hqStemsPath.isEmpty()) {
+            m_pWorkerThread->loadTrack(pNewTrack, hqStemsPath);
+            return;
+        }
+
+        // 2. Instant load from disk cache if this track was previously separated
         if (StemCache::hasCachedStems(pNewTrack)) {
             if (StemCache::loadFromCache(pNewTrack, m_pStemTrackBuffer.get())) {
                 m_pStemsProgress->set(1.0);
@@ -203,13 +226,30 @@ void StemChannelProcessor::slotTrackLoaded(TrackPointer pNewTrack, TrackPointer 
             }
         }
 
-        // 2. Otherwise start background AI neural network separation immediately
+        // 3. Otherwise start background AI neural network separation immediately
         if (m_pStemsSource->get() >= 0.5) {
             m_pWorkerThread->loadTrack(pNewTrack);
         }
     } else {
         m_pWorkerThread->stop();
     }
+}
+
+void StemChannelProcessor::slotHqStemsReady(const QString& trackLocation) {
+    if (!m_pEngineBuffer || m_pStemsSource->get() < 0.5) {
+        return;
+    }
+    TrackPointer pTrack = m_pEngineBuffer->getLoadedTrack();
+    if (!pTrack || pTrack->getLocation() != trackLocation) {
+        return;
+    }
+
+    // Stems were written while this track was already playing: drop whatever
+    // the fast engine produced and reload from the new file.
+    m_pStemTrackBuffer->clear();
+    m_pStemsProgress->set(0.0);
+    m_pStemsStatus->set(1.0);
+    m_pWorkerThread->loadTrack(pTrack, trackLocation);
 }
 
 void StemChannelProcessor::process(CSAMPLE* pInOut, int iBufferSize, audio::FramePos playPos) {

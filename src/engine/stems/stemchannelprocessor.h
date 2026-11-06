@@ -10,6 +10,7 @@
 #include "engine/stems/stemdspisolator.h"
 #include "engine/stems/stemtrackbuffer.h"
 #include "engine/stems/stemworkerthread.h"
+#include "preferences/usersettings.h"
 #include "track/track.h"
 
 class EngineBuffer;
@@ -19,7 +20,9 @@ namespace mixxx {
 class StemChannelProcessor : public QObject {
     Q_OBJECT
   public:
-    StemChannelProcessor(const QString& group, EngineBuffer* pBuffer);
+    StemChannelProcessor(const QString& group,
+            EngineBuffer* pBuffer,
+            UserSettingsPointer pConfig);
     ~StemChannelProcessor() override;
 
     // Called on every audio callback in EngineDeck::process
@@ -33,6 +36,9 @@ class StemChannelProcessor : public QObject {
     void slotResetStems(double v);
     void slotSourceChanged(double v);
     void slotTrackLoaded(TrackPointer pNewTrack, TrackPointer pOldTrack);
+    /// Offline HT-Demucs stems were written for `trackLocation`: switch to them
+    /// if that is the track this deck is playing.
+    void slotHqStemsReady(const QString& trackLocation);
 
   private:
     // Unmute all stems, restore unity gain and release any latched solo.
@@ -42,6 +48,7 @@ class StemChannelProcessor : public QObject {
 
     QString m_group;
     EngineBuffer* m_pEngineBuffer;
+    UserSettingsPointer m_pConfig;
 
     // Stem Controls
     std::unique_ptr<ControlPushButton> m_pStemsActive;

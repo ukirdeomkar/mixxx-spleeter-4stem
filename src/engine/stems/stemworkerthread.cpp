@@ -1,17 +1,14 @@
 #include "engine/stems/stemworkerthread.h"
 #include "engine/stems/stemseparator.h"
 #include "engine/stems/stemcache.h"
-#include "sources/soundsourceproxy.h"
-#include "sources/audiosource.h"
-#include "util/indexrange.h"
-#include "util/samplebuffer.h"
+#include "engine/stems/stemdecode.h"
 
 #include <QDebug>
-#include <QProcess>
-#include <QFile>
-#include <QDateTime>
-#include <vector>
+
 #include <algorithm>
+#include <atomic>
+#include <cstdint>
+#include <vector>
 
 namespace mixxx {
 
@@ -29,9 +26,10 @@ StemWorkerThread::~StemWorkerThread() {
     wait();
 }
 
-void StemWorkerThread::loadTrack(TrackPointer pTrack) {
+void StemWorkerThread::loadTrack(TrackPointer pTrack, const QString& hqStemsPath) {
     QMutexLocker locker(&m_mutex);
     m_pNextTrack = std::move(pTrack);
+    m_nextHqStemsPath = hqStemsPath;
     m_abortCurrentTrack.storeRelaxed(1);
     m_hasWork.storeRelaxed(1);
     m_condition.wakeOne();
@@ -50,6 +48,7 @@ void StemWorkerThread::stop() {
     m_hasWork.storeRelaxed(0);
     QMutexLocker locker(&m_mutex);
     m_pNextTrack.reset();
+    m_nextHqStemsPath.clear();
     m_condition.wakeOne();
 }
 
@@ -66,6 +65,8 @@ void StemWorkerThread::run() {
             }
             pTrack = m_pNextTrack;
             m_pNextTrack.reset();
+            m_currentHqStemsPath = m_nextHqStemsPath;
+            m_nextHqStemsPath.clear();
             m_abortCurrentTrack.storeRelaxed(0);
         }
 
@@ -74,6 +75,27 @@ void StemWorkerThread::run() {
         }
 
         m_pCurrentTrack = pTrack;
+
+        // 0. High quality (HT-Demucs) stems, if the user generated them for
+        // this track. These are preferred over everything else.
+        if (!m_currentHqStemsPath.isEmpty()) {
+            if (StemCache::loadFromPath(m_currentHqStemsPath, m_pBuffer.get())) {
+                qDebug() << "StemWorkerThread: high quality stems loaded for"
+                         << pTrack->getTitle();
+                if (m_pProgressControl) {
+                    m_pProgressControl->set(1.0);
+                }
+                if (m_pStatusControl) {
+                    m_pStatusControl->set(2.0); // 2 = AI Stems Ready!
+                }
+                m_currentHqStemsPath.clear();
+                continue;
+            }
+            qDebug() << "StemWorkerThread: high quality stems unreadable,"
+                     << "falling back to the fast engine:"
+                     << m_currentHqStemsPath;
+            m_currentHqStemsPath.clear();
+        }
 
         // 1. Check if stems are already cached on disk (VirtualDJ-style instant load)
         if (StemCache::hasCachedStems(pTrack)) {
@@ -108,83 +130,11 @@ void StemWorkerThread::run() {
 
         std::vector<float> in_l;
         std::vector<float> in_r;
-        uint32_t totalFrames = 0;
+        std::atomic<bool> cancelRequested{false};
 
-        // Attempt 1: Try decoding via Mixxx SoundSourceProxy
-        mixxx::AudioSource::OpenParams config;
-        config.setChannelCount(mixxx::audio::ChannelCount::stereo());
-        auto pAudioSource = SoundSourceProxy(pTrack).openAudioSource(config);
-
-        if (pAudioSource && pAudioSource->verifyReadable() && pAudioSource->frameLength() > 0) {
-            totalFrames = static_cast<uint32_t>(pAudioSource->frameLength());
-            in_l.resize(totalFrames);
-            in_r.resize(totalFrames);
-
-            constexpr SINT kBlockSize = 65536;
-            mixxx::SampleBuffer sampleBuffer(kBlockSize * 2);
-            SINT framesReadTotal = 0;
-            while (framesReadTotal < static_cast<SINT>(totalFrames)) {
-                if (m_stopRequested.loadAcquire() || m_abortCurrentTrack.loadAcquire()) {
-                    break;
-                }
-                const SINT framesToRead = std::min(kBlockSize, static_cast<SINT>(totalFrames) - framesReadTotal);
-                const auto chunkRange = mixxx::IndexRange::between(framesReadTotal, framesReadTotal + framesToRead);
-                const auto readableFrames = pAudioSource->readSampleFrames(
-                        mixxx::WritableSampleFrames(chunkRange, mixxx::SampleBuffer::WritableSlice(sampleBuffer)));
-                const SINT count = readableFrames.frameLength();
-                if (count <= 0) {
-                    break;
-                }
-                for (SINT i = 0; i < count; ++i) {
-                    in_l[framesReadTotal + i] = static_cast<float>(sampleBuffer[2 * i]);
-                    in_r[framesReadTotal + i] = static_cast<float>(sampleBuffer[2 * i + 1]);
-                }
-                framesReadTotal += count;
-            }
-        }
-
-        // Attempt 2: Fallback to native platform audio converter (afconvert on macOS)
-        if (in_l.empty() || totalFrames == 0) {
-#ifdef __APPLE__
-            const QString inputPath = pTrack->getLocation();
-            const QString tempWavPath = QString("/tmp/mixxx_stem_decode_%1.wav")
-                    .arg(QDateTime::currentMSecsSinceEpoch());
-
-            QStringList args;
-            args << "-f" << "WAVE" << "-d" << "LEF32@44100" << "-c" << "2" << inputPath << tempWavPath;
-            int ret = QProcess::execute("afconvert", args);
-            if (ret == 0) {
-                QFile wavFile(tempWavPath);
-                if (wavFile.open(QIODevice::ReadOnly)) {
-                    QByteArray header = wavFile.read(8192);
-                    int dataPos = header.indexOf("data");
-                    if (dataPos >= 0) {
-                        wavFile.seek(dataPos + 4);
-                        uint32_t dataBytes = 0;
-                        wavFile.read(reinterpret_cast<char*>(&dataBytes), sizeof(uint32_t));
-                        totalFrames = dataBytes / (2 * sizeof(float));
-
-                        wavFile.seek(dataPos + 8);
-                        std::vector<float> interleaved(totalFrames * 2);
-                        qint64 readBytes = wavFile.read(reinterpret_cast<char*>(interleaved.data()), dataBytes);
-                        uint32_t actualFrames = static_cast<uint32_t>(readBytes / (2 * sizeof(float)));
-                        totalFrames = actualFrames;
-
-                        in_l.resize(totalFrames);
-                        in_r.resize(totalFrames);
-                        for (uint32_t i = 0; i < totalFrames; ++i) {
-                            in_l[i] = interleaved[2 * i];
-                            in_r[i] = interleaved[2 * i + 1];
-                        }
-                    }
-                    wavFile.close();
-                }
-                QFile::remove(tempWavPath);
-            }
-#endif
-        }
-
-        if (totalFrames == 0 || in_l.empty()) {
+        const bool decoded = decodeTrackToStereoFloats(pTrack, &in_l, &in_r, &cancelRequested);
+        const uint32_t totalFrames = decoded ? static_cast<uint32_t>(in_l.size()) : 0;
+        if (totalFrames == 0) {
             qDebug() << "StemWorkerThread: Failed to decode audio for" << pTrack->getLocation();
             if (m_pStatusControl) {
                 m_pStatusControl->set(0.0);

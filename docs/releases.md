@@ -19,8 +19,24 @@ attaches every produced asset with `--clobber`, and then runs
 `<!-- downloads:start -->` / `<!-- downloads:end -->` markers.
 
 Leave `release_tag` empty for a build-only run (artifacts only). The
-`build_windows` / `build_linux` / `build_macos` inputs let you skip a platform;
-the publish job still runs for whichever platform succeeded.
+`build_windows` / `build_linux` / `build_macos_intel` / `build_macos_arm64`
+inputs pick the platforms; the publish job still runs for whichever platform
+succeeded.
+
+`bundle_htdemucs` (default `false`) additionally downloads `htdemucs.onnx`
+(~316 MB) into `./models` before configuring, so the artifact also carries the
+offline **Add High Quality Stems** engine. Use it for test builds only; releases
+keep the smaller download and users drop the model in themselves (see
+`docs/todo-hq-demucs.md`).
+
+Single-platform test build (macOS Intel only, with the high quality model):
+
+```bash
+gh workflow run build-stems.yml --ref <branch> \
+  -f build_windows=false -f build_linux=false \
+  -f build_macos_intel=true -f build_macos_arm64=false \
+  -f bundle_htdemucs=true
+```
 
 Security shape: both build jobs run with `permissions: contents: read`; only
 the small `publish` job gets `contents: write`, and it does nothing but
