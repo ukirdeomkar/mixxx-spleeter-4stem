@@ -51,7 +51,7 @@ QString sanitizeFileName(const QString& name) {
 }
 
 QString indexFilePath() {
-    QString settingsPath = CmdlineArgs::instance().getSettingsPath();
+    QString settingsPath = CmdlineArgs::Instance().getSettingsPath();
     if (settingsPath.isEmpty()) {
         settingsPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     }
