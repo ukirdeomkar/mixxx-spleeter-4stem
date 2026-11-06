@@ -2911,6 +2911,13 @@ bool WTrackMenu::featureIsEnabled(Feature flag) const {
         return true;
     case Feature::FindOnWeb:
         return true;
+    case Feature::HighQualityStems:
+        // Offline separation only needs a readable track location. It does not
+        // depend on any track model capability, so it is available for every
+        // track in the library. Without this case the switch fell through to
+        // the default and returned false, which hid the action from the
+        // library context menu entirely.
+        return true;
     case Feature::Properties:
         return m_pTrackModel->hasCapabilities(TrackModel::Capability::Properties);
     case Feature::SearchRelated:
