@@ -1732,7 +1732,7 @@ void WTrackMenu::slotAddHighQualityStems() {
         return;
     }
 
-    if (StemHqService::instance().isBusy()) {
+    if (mixxx::StemHqService::instance().isBusy()) {
         QMessageBox::information(parentWidget(),
                 tr("Add high quality stems"),
                 tr("A high quality separation is already running. Wait for it to "
