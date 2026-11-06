@@ -244,12 +244,24 @@ void StemChannelProcessor::slotHqStemsReady(const QString& trackLocation) {
         return;
     }
 
+    // `trackLocation` identifies the track, not the stems file. Resolve the
+    // .stems path that was just registered; passing the track location here
+    // made the worker try to open the source audio as a stem file, fail the
+    // magic check and fall back to Spleeter until the track was reloaded.
+    const QString hqStemsPath = StemHqStore::findStemsForTrack(
+            pTrack, StemHqStore::getLastOutputDir(m_pConfig));
+    if (hqStemsPath.isEmpty()) {
+        qDebug() << "StemChannelProcessor: high quality stems for"
+                 << trackLocation << "are not readable; keeping the fast stems";
+        return;
+    }
+
     // Stems were written while this track was already playing: drop whatever
     // the fast engine produced and reload from the new file.
     m_pStemTrackBuffer->clear();
     m_pStemsProgress->set(0.0);
     m_pStemsStatus->set(1.0);
-    m_pWorkerThread->loadTrack(pTrack, trackLocation);
+    m_pWorkerThread->loadTrack(pTrack, hqStemsPath);
 }
 
 void StemChannelProcessor::process(CSAMPLE* pInOut, int iBufferSize, audio::FramePos playPos) {
